@@ -20,6 +20,9 @@ internal static class ModuleDependencyInjection
         services.AddSingleton<CommandsModule>();
         services.AddSingleton<IModule>(sp => sp.GetRequiredService<CommandsModule>());
 
+        services.AddSingleton<ConVarPinsModule>();
+        services.AddSingleton<IModule>(sp => sp.GetRequiredService<ConVarPinsModule>());
+
         services.AddSingleton<Modules.Web.WebBridgeModule>();
         services.AddSingleton<IModule>(sp => sp.GetRequiredService<Modules.Web.WebBridgeModule>());
 

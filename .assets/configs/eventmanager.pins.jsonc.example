@@ -1,0 +1,15 @@
+{
+  // Workshop-map convar protection. These convars are FORCED to the values below and snapped
+  // back the instant a map cfg / vscript / point_servercommand tries to change them — so a
+  // hostile custom map can't turn on cheats, break movement, etc. Rename to
+  // eventmanager.pins.jsonc to activate (absent = protection off).
+  "Pins": {
+    "sv_cheats": "0",
+    "sv_gravity": "800",
+    "sv_accelerate": "5.5",
+    "sv_airaccelerate": "12",
+    "mp_teammates_are_enemies": "0",
+    "bot_stop": "0",
+    "sv_alltalk": "0"
+  }
+}
