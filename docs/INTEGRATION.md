@@ -54,6 +54,13 @@ always safe.
 - Settings: expose via `GetSettings()` (re-queried per render, return live values), validate in
   `TrySetSetting(key, value)` — strings at the boundary, you own parsing and state. No convars.
 
+**Convar-flip adapters: own the convar across cfg re-syncs.** If your gamemode re-applies its
+autoexec .cfg per map (e.g. Prophunt's `OnServerSpawn → SyncConVars`), the file value will
+overwrite the gate's dormant `x_enabled 0` on every map change. The adapter must re-assert the
+coordinator's state AFTER the sync — ModSharp game listeners run in DESCENDING priority, so give
+the gate listener a lower priority than the config module's and set the convar in `OnServerSpawn`
+(see Prophunt's `EventGateModule`).
+
 ## Per-gamemode notes (recon 2026-07-18, see SPEC.md)
 
 - **Prophunt** — dormancy exists: `ph_enabled` gates `RoundManager.IsReady`, all takeover hooks
