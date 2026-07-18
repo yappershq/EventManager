@@ -72,6 +72,43 @@ internal sealed class MenuModule : IModule
                 }
             })
 
+            // ▶ Start — only visible while an event is armed in the warmup lobby.
+            .Item((IGameClient viewer, ref MenuItemContext ctx) =>
+            {
+                if (_coordinator.ArmedEventId is not { } armedId || _coordinator.Find(armedId) is not { } armed)
+                    return; // Title unset → row skipped
+
+                ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_Start", armed.DisplayName);
+                ctx.Color    = ColorActive;
+                ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Start");
+                ctx.Action   = ctrl =>
+                {
+                    var result = _coordinator.Start(out var started);
+                    Loc.Chat(lm, ctrl.Client, result switch
+                    {
+                        ActivateResult.Started => "EventManager_Activated",
+                        ActivateResult.Failed  => "EventManager_ActivateFailed",
+                        _                      => "EventManager_NoArmed",
+                    }, started?.DisplayName ?? "");
+                    ctrl.Refresh();
+                };
+            })
+
+            // Start-mode toggle: Warmup lobby (arm + manual start) vs Direct (instant).
+            .Item((IGameClient viewer, ref MenuItemContext ctx) =>
+            {
+                ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_StartMode",
+                    _coordinator.StartMode == StartMode.Warmup ? "Warmup lobby" : "Direct");
+                ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_StartMode");
+                ctx.Action   = ctrl =>
+                {
+                    _coordinator.StartMode = _coordinator.StartMode == StartMode.Warmup
+                        ? StartMode.Direct
+                        : StartMode.Warmup;
+                    ctrl.Refresh();
+                };
+            })
+
             .Spacer()
             .SubMenu(
                 viewer => Loc.Text(lm, viewer, "EventManager_Menu_Events", _coordinator.Registered.Count),
@@ -159,9 +196,11 @@ internal sealed class MenuModule : IModule
 
             ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_Enable");
             ctx.Color    = ColorActive;
-            ctx.HintText = Loc.Text(lm, viewer, mode.RequiresRoundRestart
-                ? "EventManager_Hint_EnableRestart"
-                : "EventManager_Hint_Enable");
+            ctx.HintText = Loc.Text(lm, viewer, _coordinator.StartMode == StartMode.Warmup
+                ? "EventManager_Hint_Arm"
+                : mode.RequiresRoundRestart
+                    ? "EventManager_Hint_EnableRestart"
+                    : "EventManager_Hint_Enable");
             ctx.Action   = ctrl =>
             {
                 if (_coordinator.ActiveEventId is { } otherId && _coordinator.Find(otherId) is { } other)
@@ -247,9 +286,11 @@ internal sealed class MenuModule : IModule
             {
                 ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_Confirm_Yes");
                 ctx.Color    = ColorActive;
-                ctx.HintText = Loc.Text(lm, viewer, to.RequiresRoundRestart
-                    ? "EventManager_Hint_EnableRestart"
-                    : "EventManager_Hint_Enable");
+                ctx.HintText = Loc.Text(lm, viewer, _coordinator.StartMode == StartMode.Warmup
+                    ? "EventManager_Hint_Arm"
+                    : to.RequiresRoundRestart
+                        ? "EventManager_Hint_EnableRestart"
+                        : "EventManager_Hint_Enable");
                 ctx.Action   = ctrl =>
                 {
                     Activate(ctrl, to);
@@ -408,10 +449,18 @@ internal sealed class MenuModule : IModule
     {
         var lm = _bridge.LocalizerManager;
 
-        if (_coordinator.TryActivate(mode.Id, out _, out var reason))
-            Loc.Chat(lm, ctrl.Client, "EventManager_Activated", mode.DisplayName);
-        else if (reason == "failed")
-            Loc.Chat(lm, ctrl.Client, "EventManager_ActivateFailed", mode.Id);
+        switch (_coordinator.TryActivate(mode.Id, out _))
+        {
+            case ActivateResult.Started:
+                Loc.Chat(lm, ctrl.Client, "EventManager_Activated", mode.DisplayName);
+                break;
+            case ActivateResult.Armed:
+                Loc.Chat(lm, ctrl.Client, "EventManager_Armed", mode.DisplayName);
+                break;
+            case ActivateResult.Failed:
+                Loc.Chat(lm, ctrl.Client, "EventManager_ActivateFailed", mode.Id);
+                break;
+        }
     }
 
     private string Current(IEventMode mode, string key)

@@ -1,6 +1,12 @@
 {
   "EventManager_NoPermission":     { "en-US": " {{red}}No permission." },
-  "EventManager_Usage":            { "en-US": " {{green}}[Events]{{default}} Usage: {{lime}}!events list | on <id> | off | set <id> <key> <value> | intro on|off | respawnall | countdown [secs]" },
+  "EventManager_Usage":            { "en-US": " {{green}}[Events]{{default}} Usage: {{lime}}!events list | on <id> | start | off | startmode warmup|direct | set <id> <key> <value> | intro on|off | respawnall | countdown [secs]" },
+
+  "EventManager_Armed":            { "en-US": " {{green}}[Events]{{default}} {{lime}}{0}{{default}} armed in the warmup lobby — {{lime}}!events start{{default}} when ready." },
+  "EventManager_Disarmed":         { "en-US": " {{green}}[Events]{{default}} {{lime}}{0}{{default}} disarmed — lobby stays vanilla." },
+  "EventManager_NoArmed":          { "en-US": " {{green}}[Events]{{default}} Nothing armed to start." },
+  "EventManager_StartMode":        { "en-US": " {{green}}[Events]{{default}} Start mode: {{lime}}{0}" },
+  "EventManager_List_ArmedSuffix": { "en-US": " {{lime}}▶ ARMED" },
 
   "EventManager_NoEvents":         { "en-US": " {{green}}[Events]{{default}} No events registered on this server." },
   "EventManager_List_Header":      { "en-US": " {{green}}[Events]{{default}} {0} registered:" },
@@ -45,6 +51,12 @@
   "EventManager_Menu_Countdown":      { "en-US": "Countdown" },
   "EventManager_Menu_Countdown_Secs": { "en-US": "{0} seconds" },
 
+  "EventManager_Menu_Start":          { "en-US": "▶ Start: {0}" },
+  "EventManager_Menu_StartMode":      { "en-US": "Start mode: {0}" },
+
+  "EventManager_Hint_Start":          { "en-US": "End warmup — round 1 of the armed event" },
+  "EventManager_Hint_StartMode":      { "en-US": "Warmup lobby = arm + manual start; Direct = instant" },
+  "EventManager_Hint_Arm":            { "en-US": "Arms in the warmup lobby — start when ready" },
   "EventManager_Hint_Status_Active":  { "en-US": "Select to open the active event" },
   "EventManager_Hint_Status_None":    { "en-US": "Server is vanilla — select to browse events" },
   "EventManager_Hint_ActiveRow":      { "en-US": "Currently active" },

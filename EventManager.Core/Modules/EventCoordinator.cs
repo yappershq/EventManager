@@ -7,10 +7,32 @@ using Microsoft.Extensions.Logging;
 
 namespace EventManager.Modules;
 
+internal enum StartMode
+{
+    /// <summary>Activating an event arms it in a paused warmup lobby; the operator starts it explicitly.</summary>
+    Warmup,
+
+    /// <summary>Activating an event starts it immediately (round restart).</summary>
+    Direct,
+}
+
+internal enum ActivateResult
+{
+    Started,
+    Armed,
+    Unknown,
+    Already,
+    Failed,
+}
+
 /// <summary>
 /// The registry + activation state machine behind <see cref="IEventManagerShared"/>.
-/// Ground state is "no event active"; at most one event is active; everything runs on the
-/// game thread (command/menu context), so no locking.
+///
+/// States: vanilla (nothing on) → armed (paused warmup lobby, event chosen but NOT running —
+/// nothing of the mode touches players until the operator starts) → active (event running).
+/// The coordinator owns ALL game transitions (warmup lobby / warmup end / round restart);
+/// adapters only install/tear down their mode. Ground state after "off" is the warmup lobby.
+/// At most one event is armed or active; everything runs on the game thread, so no locking.
 /// </summary>
 internal sealed class EventCoordinator : IModule, IEventManagerShared
 {
@@ -20,6 +42,10 @@ internal sealed class EventCoordinator : IModule, IEventManagerShared
     private readonly Dictionary<string, IEventMode> _events = new(StringComparer.OrdinalIgnoreCase);
 
     private string? _activeId;
+    private string? _armedId;
+    private bool    _inLobby;
+
+    public StartMode StartMode { get; set; } = StartMode.Warmup;
 
     public EventCoordinator(ILogger<EventCoordinator> logger, InterfaceBridge bridge)
     {
@@ -37,8 +63,9 @@ internal sealed class EventCoordinator : IModule, IEventManagerShared
 
     public void Shutdown()
     {
-        // Plugin unload: leave the server vanilla.
-        DeactivateCurrent();
+        // Plugin unload: tear down quietly — no game transitions (server may be shutting down).
+        DeactivateCore();
+        _armedId = null;
         _events.Clear();
     }
 
@@ -67,30 +94,86 @@ internal sealed class EventCoordinator : IModule, IEventManagerShared
 
     // ── Coordinator API (commands/menu) ───────────────────────────────────
 
+    public string? ArmedEventId => _armedId;
+
     public IReadOnlyList<IEventMode> Registered => _events.Values.OrderBy(e => e.Id).ToList();
 
     public IEventMode? Find(string id) => _events.GetValueOrDefault(id);
 
-    /// <summary>Activate an event by id, deactivating the current one first.</summary>
-    public bool TryActivate(string id, out IEventMode? mode, out string reason)
+    /// <summary>Select an event: Direct mode starts it now; Warmup mode arms it in the lobby.</summary>
+    public ActivateResult TryActivate(string id, out IEventMode? mode)
     {
-        mode   = null;
-        reason = "";
-
         if (!_events.TryGetValue(id, out mode))
+            return ActivateResult.Unknown;
+
+        if (IsActive(mode.Id) || string.Equals(_armedId, mode.Id, StringComparison.OrdinalIgnoreCase))
+            return ActivateResult.Already;
+
+        DeactivateCore();
+        _armedId = null;
+
+        if (StartMode == StartMode.Warmup)
         {
-            reason = "unknown";
-            return false;
+            // Arm only — the mode stays completely off until Start(); intros can't be disturbed
+            // by mode logic (e.g. a match coordinator forcing round starts).
+            _armedId = mode.Id;
+            EnterLobby();
+            _logger.LogInformation("[EventManager] Event '{Id}' armed in warmup lobby.", mode.Id);
+            return ActivateResult.Armed;
         }
 
-        if (IsActive(mode.Id))
+        if (!ActivateCore(mode))
+            return ActivateResult.Failed;
+
+        GoLive(mode.RequiresRoundRestart);
+        return ActivateResult.Started;
+    }
+
+    /// <summary>Start the armed event: activate the mode and end the warmup lobby into round 1.</summary>
+    public ActivateResult Start(out IEventMode? mode)
+    {
+        mode = _armedId is null ? null : _events.GetValueOrDefault(_armedId);
+
+        if (mode is null)
         {
-            reason = "already";
-            return false;
+            _armedId = null;
+            return ActivateResult.Unknown;
         }
 
-        DeactivateCurrent();
+        _armedId = null;
 
+        if (!ActivateCore(mode))
+            return ActivateResult.Failed; // stays in the lobby, nothing armed
+
+        GoLive(mode.RequiresRoundRestart);
+        return ActivateResult.Started;
+    }
+
+    /// <summary>Disarm without starting (only meaningful while armed). Returns the disarmed mode.</summary>
+    public IEventMode? Disarm()
+    {
+        if (_armedId is null) return null;
+
+        var mode = _events.GetValueOrDefault(_armedId);
+        _armedId = null;
+        _logger.LogInformation("[EventManager] Disarmed — lobby stays vanilla.");
+        return mode;
+    }
+
+    /// <summary>Deactivate the running event and drop the server into the warmup lobby.</summary>
+    public IEventMode? DeactivateCurrent()
+    {
+        var mode = DeactivateCore();
+        if (mode is not null)
+            EnterLobby();
+
+        return mode;
+    }
+
+    // ── Internals ──────────────────────────────────────────────────────────
+
+    private bool ActivateCore(IEventMode mode)
+    {
         try
         {
             mode.Activate();
@@ -98,21 +181,16 @@ internal sealed class EventCoordinator : IModule, IEventManagerShared
         catch (Exception ex)
         {
             _logger.LogError(ex, "[EventManager] Event '{Id}' threw in Activate — staying vanilla.", mode.Id);
-            reason = "failed";
             return false;
         }
 
         _activeId = mode.Id;
         _logger.LogInformation("[EventManager] Event '{Id}' activated.", mode.Id);
-
-        if (mode.RequiresRoundRestart)
-            _bridge.ModSharp.ServerCommand("mp_restartgame 1");
-
         return true;
     }
 
-    /// <summary>Deactivate the active event, if any. Returns the mode that was deactivated.</summary>
-    public IEventMode? DeactivateCurrent()
+    /// <summary>Tear down the running event. No game transition — callers decide.</summary>
+    private IEventMode? DeactivateCore()
     {
         if (_activeId is null || !_events.TryGetValue(_activeId, out var mode))
         {
@@ -127,7 +205,7 @@ internal sealed class EventCoordinator : IModule, IEventManagerShared
         try
         {
             mode.Deactivate();
-            _logger.LogInformation("[EventManager] Event '{Id}' deactivated — server is vanilla.", mode.Id);
+            _logger.LogInformation("[EventManager] Event '{Id}' deactivated.", mode.Id);
         }
         catch (Exception ex)
         {
@@ -137,10 +215,35 @@ internal sealed class EventCoordinator : IModule, IEventManagerShared
         return mode;
     }
 
+    /// <summary>Paused warmup lobby — the between-events ground state.</summary>
+    private void EnterLobby()
+    {
+        if (_inLobby) return;
+
+        _bridge.ModSharp.ServerCommand("mp_warmup_start");
+        _bridge.ModSharp.ServerCommand("mp_warmup_pausetimer 1");
+        _inLobby = true;
+    }
+
+    /// <summary>Transition into live play: end any warmup, restart the round if the mode needs it.</summary>
+    private void GoLive(bool requiresRoundRestart)
+    {
+        _bridge.ModSharp.ServerCommand("mp_warmup_pausetimer 0");
+        _bridge.ModSharp.ServerCommand("mp_warmup_end"); // no-op when not in warmup
+
+        if (!_inLobby && requiresRoundRestart)
+            _bridge.ModSharp.ServerCommand("mp_restartgame 1");
+
+        _inLobby = false;
+    }
+
     private void Unregister(IEventMode mode)
     {
+        if (string.Equals(_armedId, mode.Id, StringComparison.OrdinalIgnoreCase))
+            _armedId = null;
+
         if (IsActive(mode.Id))
-            DeactivateCurrent();
+            DeactivateCore(); // no transition — unregistration usually means plugin/server shutdown
 
         if (_events.Remove(mode.Id))
             _logger.LogInformation("[EventManager] Unregistered event '{Id}'.", mode.Id);

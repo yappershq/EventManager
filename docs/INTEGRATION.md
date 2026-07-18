@@ -49,8 +49,13 @@ always safe.
   toggle modes mid-session. Guard native detours / buffers for re-install (idempotent).
 - `Deactivate()` restores live-player state you changed (teams, freeze, visibility, scale…),
   not just your hooks. "Dormant" means indistinguishable from not installed.
-- `RequiresRoundRestart => true` (default) makes the manager run `mp_restartgame 1` after
-  Activate. Return false only if your mode applies cleanly mid-round.
+- **Teardown only — never issue game transitions** (`mp_restartgame`, warmup commands) from your
+  adapter. The MANAGER owns transitions: `events off` drops into a paused warmup lobby; with
+  start mode *Warmup* (default) `events on` ARMS your mode (Activate not yet called!) and
+  `events start` activates + ends warmup into round 1; with *Direct* it activates + restarts
+  immediately.
+- `RequiresRoundRestart => true` (default) makes the manager restart the round when starting
+  outside a warmup. Return false only if your mode applies cleanly mid-round.
 - Settings: expose via `GetSettings()` (re-queried per render, return live values), validate in
   `TrySetSetting(key, value)` — strings at the boundary, you own parsing and state. No convars.
 

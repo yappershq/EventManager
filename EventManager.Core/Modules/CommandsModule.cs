@@ -151,9 +151,14 @@ internal sealed class CommandsModule : IModule
                 OnSelected = slot =>
                 {
                     if (_coordinator.IsActive(m.Id))
+                    {
                         _coordinator.DeactivateCurrent();
-                    else if (!_coordinator.TryActivate(m.Id, out _, out var reason))
-                        _logger.LogWarning("[EventManager] AdminPanel activate '{Id}' failed: {Reason}.", m.Id, reason);
+                        return;
+                    }
+
+                    var result = _coordinator.TryActivate(m.Id, out _);
+                    if (result is not (ActivateResult.Started or ActivateResult.Armed))
+                        _logger.LogWarning("[EventManager] AdminPanel activate '{Id}': {Result}.", m.Id, result);
                 },
             });
         }
@@ -199,8 +204,40 @@ internal sealed class CommandsModule : IModule
                 ActivateFor(client, cmd.GetArg(2));
                 break;
 
+            case "start":
+            {
+                var result = _coordinator.Start(out var started);
+                Loc.Chat(lm, client, result switch
+                {
+                    ActivateResult.Started => "EventManager_Activated",
+                    ActivateResult.Failed  => "EventManager_ActivateFailed",
+                    _                      => "EventManager_NoArmed",
+                }, started?.DisplayName ?? "");
+                break;
+            }
+
+            case "startmode" when cmd.ArgCount >= 2:
+            {
+                var arg = cmd.GetArg(2).ToLowerInvariant();
+                if (arg is not ("warmup" or "direct"))
+                {
+                    Loc.Chat(lm, client, "EventManager_Usage");
+                    break;
+                }
+
+                _coordinator.StartMode = arg == "warmup" ? StartMode.Warmup : StartMode.Direct;
+                Loc.Chat(lm, client, "EventManager_StartMode", arg);
+                break;
+            }
+
             case "off":
             {
+                if (_coordinator.Disarm() is { } disarmed)
+                {
+                    Loc.Chat(lm, client, "EventManager_Disarmed", disarmed.DisplayName);
+                    break;
+                }
+
                 var stopped = _coordinator.DeactivateCurrent();
                 Loc.Chat(lm, client, stopped is null ? "EventManager_NothingActive" : "EventManager_Deactivated",
                     stopped?.DisplayName ?? "");
@@ -252,28 +289,30 @@ internal sealed class CommandsModule : IModule
         {
             var suffix = _coordinator.IsActive(mode.Id)
                 ? Loc.Text(lm, client, "EventManager_List_ActiveSuffix")
-                : "";
+                : string.Equals(_coordinator.ArmedEventId, mode.Id, StringComparison.OrdinalIgnoreCase)
+                    ? Loc.Text(lm, client, "EventManager_List_ArmedSuffix")
+                    : "";
             Loc.Chat(lm, client, "EventManager_List_Entry", mode.Id, mode.DisplayName, suffix);
         }
     }
 
     private void ActivateFor(IGameClient client, string id)
     {
-        var lm = _bridge.LocalizerManager;
+        var lm     = _bridge.LocalizerManager;
+        var result = _coordinator.TryActivate(id, out var mode);
 
-        if (_coordinator.TryActivate(id, out var mode, out var reason))
+        Loc.Chat(lm, client, result switch
         {
-            Loc.Chat(lm, client, "EventManager_Activated", mode!.DisplayName);
-            _logger.LogInformation("[EventManager] {Admin} activated '{Id}'.", client.Name, mode.Id);
-            return;
-        }
-
-        Loc.Chat(lm, client, reason switch
-        {
-            "already" => "EventManager_AlreadyActive",
-            "failed"  => "EventManager_ActivateFailed",
-            _         => "EventManager_Unknown",
+            ActivateResult.Started => "EventManager_Activated",
+            ActivateResult.Armed   => "EventManager_Armed",
+            ActivateResult.Already => "EventManager_AlreadyActive",
+            ActivateResult.Failed  => "EventManager_ActivateFailed",
+            _                      => "EventManager_Unknown",
         }, mode?.DisplayName ?? id);
+
+        if (result is ActivateResult.Started or ActivateResult.Armed)
+            _logger.LogInformation("[EventManager] {Admin} {Action} '{Id}'.",
+                client.Name, result == ActivateResult.Started ? "started" : "armed", mode!.Id);
     }
 
     private void SetFor(IGameClient client, string id, string key, string value)
@@ -310,14 +349,29 @@ internal sealed class CommandsModule : IModule
 
             case "on" when cmd.ArgCount >= 2:
             {
-                var id = cmd.GetArg(2);
-                if (!_coordinator.TryActivate(id, out _, out var reason))
-                    _logger.LogWarning("[EventManager] Console activate '{Id}' failed: {Reason}.", id, reason);
+                var id     = cmd.GetArg(2);
+                var result = _coordinator.TryActivate(id, out _);
+                if (result is not (ActivateResult.Started or ActivateResult.Armed))
+                    _logger.LogWarning("[EventManager] Console activate '{Id}': {Result}.", id, result);
+                break;
+            }
+
+            case "start":
+                _coordinator.Start(out _);
+                break;
+
+            case "startmode" when cmd.ArgCount >= 2:
+            {
+                var arg = cmd.GetArg(2).ToLowerInvariant();
+                if (arg is "warmup" or "direct")
+                    _coordinator.StartMode = arg == "warmup" ? StartMode.Warmup : StartMode.Direct;
+                _logger.LogInformation("[EventManager] Start mode: {Mode}.", _coordinator.StartMode);
                 break;
             }
 
             case "off":
-                _coordinator.DeactivateCurrent();
+                if (_coordinator.Disarm() is null)
+                    _coordinator.DeactivateCurrent();
                 break;
 
             case "set" when cmd.ArgCount >= 4:
