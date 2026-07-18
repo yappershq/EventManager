@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>EventManager.LowGravity</AssemblyName>
+    <RootNamespace>EventManager.LowGravity</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Private=false: the contract is loaded once from shared/EventManager.Shared. -->
+    <ProjectReference Include="..\EventManager.Shared\EventManager.Shared.csproj" Private="false" />
+  </ItemGroup>
+</Project>

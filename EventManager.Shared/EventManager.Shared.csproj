@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Public contract assembly — the future NuGet package (YappersHQ.EventManager.Shared).
+    Fun-mode plugins reference THIS (never Core). No ORM / 3rd-party types — keep clean
+    for cross-ALC consumption. Directory.Build.props routes .Shared suffix to .build/shared/.
+  -->
+  <ItemGroup>
+    <PackageReference Include="ModSharp.Sharp.Shared" Version="*" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>

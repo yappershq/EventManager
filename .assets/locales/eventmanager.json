@@ -1,0 +1,37 @@
+{
+  "EventManager_NoPermission":     { "en-US": " {{red}}No permission." },
+  "EventManager_Usage":            { "en-US": " {{green}}[Events]{{default}} Usage: {{lime}}!events list | on <id> | off | set <id> <key> <value> | intro on|off | respawnall | countdown [secs]" },
+
+  "EventManager_NoEvents":         { "en-US": " {{green}}[Events]{{default}} No events registered on this server." },
+  "EventManager_List_Header":      { "en-US": " {{green}}[Events]{{default}} {0} registered:" },
+  "EventManager_List_Entry":       { "en-US": "  {{lime}}{0}{{default}} — {1}{2}" },
+  "EventManager_List_ActiveSuffix":{ "en-US": " {{green}}● ACTIVE" },
+
+  "EventManager_Activated":        { "en-US": " {{green}}[Events]{{default}} {{lime}}{0}{{default}} activated." },
+  "EventManager_Deactivated":      { "en-US": " {{green}}[Events]{{default}} {{lime}}{0}{{default}} deactivated — back to vanilla." },
+  "EventManager_NothingActive":    { "en-US": " {{green}}[Events]{{default}} No event is active." },
+  "EventManager_AlreadyActive":    { "en-US": " {{green}}[Events]{{default}} {{lime}}{0}{{default}} is already active." },
+  "EventManager_Unknown":          { "en-US": " {{red}}Unknown event '{0}'. Try {{lime}}!events list{{red}}." },
+  "EventManager_ActivateFailed":   { "en-US": " {{red}}Event '{0}' failed to activate — check server logs." },
+
+  "EventManager_SettingSet":       { "en-US": " {{green}}[Events]{{default}} {0}.{1} = {{lime}}{2}" },
+  "EventManager_SettingRejected":  { "en-US": " {{red}}Setting rejected: {0}.{1} = '{2}'." },
+
+  "EventManager_Intro_On":         { "en-US": " {{green}}[Events]{{default}} Intro mode ON — round win conditions ignored." },
+  "EventManager_Intro_Off":        { "en-US": " {{green}}[Events]{{default}} Intro mode OFF." },
+  "EventManager_RespawnAll":       { "en-US": " {{green}}[Events]{{default}} Respawned {0} player(s)." },
+  "EventManager_Countdown_ChatStart": { "en-US": " {{green}}[Events]{{default}} Countdown: {0}s…" },
+  "EventManager_Countdown_Tick":   { "en-US": "{0}" },
+  "EventManager_Countdown_Go":     { "en-US": "GO!" },
+
+  "EventManager_Menu_Title":          { "en-US": "Event Manager" },
+  "EventManager_Menu_Tools":          { "en-US": "Stream Tools" },
+  "EventManager_Menu_DisableCurrent": { "en-US": "Disable: {0}" },
+  "EventManager_Menu_Enable":         { "en-US": "Enable" },
+  "EventManager_Menu_Disable":        { "en-US": "Disable" },
+  "EventManager_Menu_SettingHint":    { "en-US": "(chat: !events set {0} {1} <value>)" },
+  "EventManager_Menu_IntroOn":        { "en-US": "Intro mode: OFF → turn ON" },
+  "EventManager_Menu_IntroOff":       { "en-US": "Intro mode: ON → turn OFF" },
+  "EventManager_Menu_RespawnAll":     { "en-US": "Respawn all dead players" },
+  "EventManager_Menu_Countdown":      { "en-US": "Countdown (5s)" }
+}
