@@ -93,7 +93,7 @@ internal sealed class StreamToolsModule : IModule
     /// <summary>Center-screen countdown for the whole server: secs..1 then GO.</summary>
     public void Countdown(int seconds)
     {
-        seconds = System.Math.Clamp(seconds, 1, 15);
+        seconds = System.Math.Clamp(seconds, 1, 60); // custom stream countdowns up to a minute
 
         var gen = ++_countdownGen;
         Loc.ChatAll(_bridge.LocalizerManager, _bridge.ClientManager, "EventManager_Countdown_ChatStart", seconds);
