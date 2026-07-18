@@ -1,0 +1,45 @@
+name: Publish NuGet (YappersHQ.EventManager.Shared)
+
+# Keyless publish to nuget.org via Trusted Publishing (OIDC). No API key stored.
+# Fires when a GitHub Release is published; also manual via workflow_dispatch.
+# nuget.org side: Trusted Publishing policy →
+#   Repository Owner: yappershq   Repository: EventManager   Workflow File: nuget-release.yml
+#   Environment: prod
+# Repo secret required: NUGET_USER = the nuget.org username (profile name, NOT email).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      id-token: write   # OIDC token issuance for the nuget.org token exchange
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Pure-contract, zero-dependency package — pack only the Shared project.
+      - name: Pack
+        run: dotnet pack EventManager.Shared/EventManager.Shared.csproj -c Release -o artifacts
+
+      # Exchange the GitHub OIDC token for a short-lived (1h) nuget.org API key.
+      - name: NuGet login (OIDC → temp key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: NuGet push
+        run: >
+          dotnet nuget push "artifacts/*.nupkg"
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
