@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using AdminPanel.Shared;
 using EventManager.Plugins;
 using EventManager.Utils;
 using Microsoft.Extensions.Logging;
@@ -24,7 +25,8 @@ namespace EventManager.Modules;
 /// </summary>
 internal sealed class CommandsModule : IModule
 {
-    private const string AdminFlag = "eventmanager:admin";
+    private const string AdminFlag           = "eventmanager:admin";
+    private const string AdminPanelActionId  = "eventmanager.events";
 
     private readonly ILogger<CommandsModule> _logger;
     private readonly InterfaceBridge         _bridge;
@@ -32,7 +34,8 @@ internal sealed class CommandsModule : IModule
     private readonly StreamToolsModule       _tools;
     private readonly MenuModule              _menu;
 
-    private IAdminManager? _adminManager;
+    private IAdminManager?     _adminManager;
+    private IAdminPanelShared? _adminPanel;
 
     public CommandsModule(
         ILogger<CommandsModule> logger,
@@ -89,9 +92,74 @@ internal sealed class CommandsModule : IModule
         reg.RegisterClientCommand("events", OnEvents);
         reg.RegisterServerCommand("events", OnEventsServer,
             "Event gate: events list | on <id> | off | set <id> <key> <value> | intro on|off | respawnall | countdown [secs]");
+
+        RegisterAdminPanel();
     }
 
-    public void Shutdown() { }
+    public void Shutdown()
+    {
+        try { _adminPanel?.Unregister(AdminPanelActionId); }
+        catch (System.Exception ex) { _logger.LogError(ex, "[EventManager] AdminPanel unregister failed."); }
+    }
+
+    // ── AdminPanel integration (!admin → Fun → Events → toggle) ────────────
+
+    private void RegisterAdminPanel()
+    {
+        _adminPanel = _bridge.SharpModuleManager
+            .GetOptionalSharpModuleInterface<IAdminPanelShared>(IAdminPanelShared.Identity)?.Instance;
+        if (_adminPanel is null) return; // AdminPanel not installed — chat/console commands still work.
+
+        try
+        {
+            _adminPanel.RegisterGlobalAction(new AdminPanelGlobalAction
+            {
+                Id         = AdminPanelActionId,
+                Label      = "Events",
+                Category   = "Fun",
+                Permission = AdminFlag,
+                SortOrder  = 40,
+                SubMenu    = _ => BuildAdminPanelItems(),
+            });
+            _logger.LogInformation("[EventManager] AdminPanel integration registered.");
+        }
+        catch (System.Exception ex)
+        {
+            _logger.LogError(ex, "[EventManager] AdminPanel register failed.");
+        }
+    }
+
+    private IReadOnlyList<AdminPanelMenuItem> BuildAdminPanelItems()
+    {
+        var items = new List<AdminPanelMenuItem>();
+
+        if (_coordinator.ActiveEventId is { } activeId && _coordinator.Find(activeId) is { } active)
+        {
+            items.Add(new AdminPanelMenuItem
+            {
+                Label      = $"Disable: {active.DisplayName}",
+                OnSelected = _ => _coordinator.DeactivateCurrent(),
+            });
+        }
+
+        foreach (var mode in _coordinator.Registered)
+        {
+            var m = mode; // capture per item
+            items.Add(new AdminPanelMenuItem
+            {
+                Label      = (_coordinator.IsActive(m.Id) ? "● " : "") + m.DisplayName,
+                OnSelected = slot =>
+                {
+                    if (_coordinator.IsActive(m.Id))
+                        _coordinator.DeactivateCurrent();
+                    else if (!_coordinator.TryActivate(m.Id, out _, out var reason))
+                        _logger.LogWarning("[EventManager] AdminPanel activate '{Id}' failed: {Reason}.", m.Id, reason);
+                },
+            });
+        }
+
+        return items;
+    }
 
     // ── Admin gate ─────────────────────────────────────────────────────────
 

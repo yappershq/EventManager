@@ -25,13 +25,24 @@
   "EventManager_Countdown_Go":     { "en-US": "GO!" },
 
   "EventManager_Menu_Title":          { "en-US": "Event Manager" },
+  "EventManager_Menu_Status_Active":  { "en-US": "Active: {0}" },
+  "EventManager_Menu_Status_None":    { "en-US": "Active: none — vanilla" },
+  "EventManager_Menu_Events":         { "en-US": "Events ({0}) »" },
+  "EventManager_Menu_Events_Title":   { "en-US": "Events" },
+  "EventManager_Menu_NoEvents":       { "en-US": "No events registered" },
   "EventManager_Menu_Tools":          { "en-US": "Stream Tools" },
   "EventManager_Menu_DisableCurrent": { "en-US": "Disable: {0}" },
   "EventManager_Menu_Enable":         { "en-US": "Enable" },
   "EventManager_Menu_Disable":        { "en-US": "Disable" },
   "EventManager_Menu_SettingHint":    { "en-US": "(chat: !events set {0} {1} <value>)" },
+  "EventManager_Menu_Confirm_Title":  { "en-US": "Switch event?" },
+  "EventManager_Menu_Confirm_Line":   { "en-US": "{0} → {1}" },
+  "EventManager_Menu_Confirm_Yes":    { "en-US": "Confirm switch" },
+  "EventManager_Menu_Confirm_No":     { "en-US": "« Cancel" },
+  "EventManager_Menu_Number_Current": { "en-US": "Current: {0}" },
   "EventManager_Menu_IntroOn":        { "en-US": "Intro mode: OFF → turn ON" },
   "EventManager_Menu_IntroOff":       { "en-US": "Intro mode: ON → turn OFF" },
   "EventManager_Menu_RespawnAll":     { "en-US": "Respawn all dead players" },
-  "EventManager_Menu_Countdown":      { "en-US": "Countdown (5s)" }
+  "EventManager_Menu_Countdown":      { "en-US": "Countdown" },
+  "EventManager_Menu_Countdown_Secs": { "en-US": "{0} seconds" }
 }
