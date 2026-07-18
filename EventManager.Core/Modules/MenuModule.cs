@@ -159,9 +159,12 @@ internal sealed class MenuModule : IModule
             builder = builder.Item((IGameClient viewer, ref MenuItemContext ctx) =>
             {
                 var active = _coordinator.IsActive(m.Id);
-                ctx.Title    = (active ? "● " : "") + m.DisplayName;
-                ctx.Color    = active ? ColorActive : null;
-                ctx.HintText = active ? Loc.Text(lm, viewer, "EventManager_Hint_ActiveRow") : null;
+                var armed  = string.Equals(_coordinator.ArmedEventId, m.Id, StringComparison.OrdinalIgnoreCase);
+                ctx.Title    = (active ? "● " : armed ? "▶ " : "") + m.DisplayName;
+                ctx.Color    = active || armed ? ColorActive : null;
+                ctx.HintText = active ? Loc.Text(lm, viewer, "EventManager_Hint_ActiveRow")
+                             : armed  ? Loc.Text(lm, viewer, "EventManager_Hint_Start")
+                             : null;
                 ctx.Action   = ctrl => ctrl.Next(c => BuildEventPage(c, m));
             });
         }
@@ -177,7 +180,7 @@ internal sealed class MenuModule : IModule
 
         var builder = Menu.Create().Title(mode.DisplayName);
 
-        // Enable / Disable — colored, hinted, with a confirm page when another event runs.
+        // Enable / Disarm / Disable — colored, hinted, with a confirm page when another event runs.
         builder = builder.Item((IGameClient viewer, ref MenuItemContext ctx) =>
         {
             if (_coordinator.IsActive(mode.Id))
@@ -189,6 +192,20 @@ internal sealed class MenuModule : IModule
                 {
                     _coordinator.DeactivateCurrent();
                     Loc.Chat(lm, ctrl.Client, "EventManager_Deactivated", mode.DisplayName);
+                    ctrl.Refresh();
+                };
+                return;
+            }
+
+            if (string.Equals(_coordinator.ArmedEventId, mode.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_Disarm");
+                ctx.Color    = ColorDanger;
+                ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Disarm");
+                ctx.Action   = ctrl =>
+                {
+                    if (_coordinator.Disarm() is { } disarmed)
+                        Loc.Chat(lm, ctrl.Client, "EventManager_Disarmed", disarmed.DisplayName);
                     ctrl.Refresh();
                 };
                 return;
@@ -210,6 +227,29 @@ internal sealed class MenuModule : IModule
                 }
 
                 Activate(ctrl, mode);
+                ctrl.Refresh();
+            };
+        });
+
+        // ▶ Start now — right here on the event page while THIS event is armed, so the whole
+        // arm → start cycle never leaves the menu.
+        builder = builder.Item((IGameClient viewer, ref MenuItemContext ctx) =>
+        {
+            if (!string.Equals(_coordinator.ArmedEventId, mode.Id, StringComparison.OrdinalIgnoreCase))
+                return; // Title unset → row skipped
+
+            ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_StartNow");
+            ctx.Color    = ColorActive;
+            ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Start");
+            ctx.Action   = ctrl =>
+            {
+                var result = _coordinator.Start(out var started);
+                Loc.Chat(lm, ctrl.Client, result switch
+                {
+                    ActivateResult.Started => "EventManager_Activated",
+                    ActivateResult.Failed  => "EventManager_ActivateFailed",
+                    _                      => "EventManager_NoArmed",
+                }, started?.DisplayName ?? "");
                 ctrl.Refresh();
             };
         });
@@ -294,7 +334,9 @@ internal sealed class MenuModule : IModule
                 ctx.Action   = ctrl =>
                 {
                     Activate(ctrl, to);
-                    ctrl.Exit();
+                    // Stay in the menu: land on the event's page — Start (if armed) or Disable
+                    // (if started) is right there.
+                    ctrl.Next(c => BuildEventPage(c, to));
                 };
             })
             .BackItem(viewer => Loc.Text(lm, viewer, "EventManager_Menu_Confirm_No"))

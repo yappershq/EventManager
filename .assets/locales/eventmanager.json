@@ -52,9 +52,12 @@
   "EventManager_Menu_Countdown_Secs": { "en-US": "{0} seconds" },
 
   "EventManager_Menu_Start":          { "en-US": "▶ Start: {0}" },
+  "EventManager_Menu_StartNow":       { "en-US": "▶ Start now" },
+  "EventManager_Menu_Disarm":         { "en-US": "Disarm" },
   "EventManager_Menu_StartMode":      { "en-US": "Start mode: {0}" },
 
   "EventManager_Hint_Start":          { "en-US": "End warmup — round 1 of the armed event" },
+  "EventManager_Hint_Disarm":         { "en-US": "Unarm — lobby stays vanilla" },
   "EventManager_Hint_StartMode":      { "en-US": "Warmup lobby = arm + manual start; Direct = instant" },
   "EventManager_Hint_Arm":            { "en-US": "Arms in the warmup lobby — start when ready" },
   "EventManager_Hint_Status_Active":  { "en-US": "Select to open the active event" },
