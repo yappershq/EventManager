@@ -102,3 +102,31 @@ internal sealed class EmRequest
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
+
+/// <summary>Schedule lane: the site plans an event for a time; the server fires it unattended.</summary>
+[SugarTable("em_schedules")]
+internal sealed class EmSchedule
+{
+    [SugarColumn(IsPrimaryKey = true, IsIdentity = true)]
+    public int Id { get; set; }
+
+    [SugarColumn(Length = 32)]  public string ServerTag { get; set; } = "";
+    [SugarColumn(Length = 64)]  public string EventId   { get; set; } = "";
+    public ulong  WorkshopId { get; set; }
+    [SugarColumn(Length = 128)] public string MapName   { get; set; } = "";
+
+    /// <summary>UTC time to fire. Server compares against UtcNow.</summary>
+    public DateTime ScheduledAt { get; set; }
+
+    [SugarColumn(Length = 16)] public string StartMode { get; set; } = "Direct";
+
+    /// <summary>pending → fired | failed | cancelled</summary>
+    [SugarColumn(Length = 16)] public string Status { get; set; } = "pending";
+
+    [SugarColumn(Length = 64)]  public string  CreatedBy  { get; set; } = "";
+    [SugarColumn(Length = 256, IsNullable = true)] public string? Note { get; set; }
+
+    public DateTime  CreatedAt { get; set; }
+    [SugarColumn(IsNullable = true)] public DateTime? FiredAt { get; set; }
+    [SugarColumn(Length = 256, IsNullable = true)] public string? Result { get; set; }
+}

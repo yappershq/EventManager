@@ -38,6 +38,7 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
     private bool _listenersInstalled;
 
     private string? _pendingArmEventId;                       // set by apply, consumed on map spawn
+    private bool    _pendingFireStart;                        // true = also Start() after arming (scheduled)
     private readonly Dictionary<string, string> _lastCatalogJson = new();
     private readonly object _stagingLock = new();
     private readonly List<(int RequestId, ulong WorkshopId)> _staging = [];
@@ -89,7 +90,7 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
                 IsAutoCloseConnection = true,
                 InitKeyType           = InitKeyType.Attribute,
             });
-            _db.CodeFirst.InitTables(typeof(EmState), typeof(EmCatalog), typeof(EmCommand), typeof(EmRequest));
+            _db.CodeFirst.InitTables(typeof(EmState), typeof(EmCatalog), typeof(EmCommand), typeof(EmRequest), typeof(EmSchedule));
         }
         catch (Exception ex)
         {
@@ -108,6 +109,7 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
         _ = Task.Run(() => Loop("heartbeat", TimeSpan.FromSeconds(10), HeartbeatTickAsync, _cts.Token));
         _ = Task.Run(() => Loop("commands", TimeSpan.FromSeconds(2), CommandTickAsync, _cts.Token));
         _ = Task.Run(() => Loop("requests", TimeSpan.FromSeconds(30), RequestTickAsync, _cts.Token));
+        _ = Task.Run(() => Loop("schedules", TimeSpan.FromSeconds(15), ScheduleTickAsync, _cts.Token));
 
         _logger.LogInformation("[EventManager.Web] Bridge active — tag '{Tag}', db '{Db}'.", _tag, config.Database);
     }
@@ -414,6 +416,65 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
         }
     }
 
+    // ── Schedule lane (unattended timed fire) ──────────────────────────────
+
+    private async Task ScheduleTickAsync()
+    {
+        if (_db is null) return;
+
+        var nowUtc = DateTime.UtcNow;
+        var due = await _db.Queryable<EmSchedule>()
+            .Where(x => x.ServerTag == _tag && x.Status == "pending" && x.ScheduledAt <= nowUtc)
+            .OrderBy(x => x.ScheduledAt)
+            .ToListAsync();
+
+        foreach (var sch in due)
+        {
+            var (ok, result) = await OnGameThread(() => FireSchedule(sch));
+            sch.Status  = ok ? "fired" : "failed";
+            sch.Result  = result.Length > 250 ? result[..250] : result;
+            sch.FiredAt = DateTime.UtcNow;
+            await _db.Updateable(sch).ExecuteCommandAsync();
+
+            _logger.LogInformation("[EventManager.Web] schedule #{Id} '{Event}' → {Status} ({Result})",
+                sch.Id, sch.EventId, sch.Status, sch.Result);
+        }
+    }
+
+    /// <summary>Game thread: fire a scheduled event — map change if needed, then activate + start.</summary>
+    private (bool Ok, string Result) FireSchedule(EmSchedule sch)
+    {
+        if (_coordinator.Find(sch.EventId) is null) return (false, "event-not-registered");
+
+        var wantMap = !string.IsNullOrEmpty(sch.MapName) || sch.WorkshopId != 0;
+        var curMap  = _bridge.ModSharp.GetMapName() ?? "";
+        var onWantedMap = !wantMap
+            || string.Equals(curMap, sch.MapName, StringComparison.OrdinalIgnoreCase);
+
+        _coordinator.StartMode = sch.StartMode.Equals("Warmup", StringComparison.OrdinalIgnoreCase)
+            ? StartMode.Warmup : StartMode.Direct;
+
+        if (wantMap && !onWantedMap)
+        {
+            // Change map; OnServerSpawn activates + (for a schedule) starts.
+            _pendingArmEventId = sch.EventId;
+            _pendingFireStart  = true;
+            _bridge.ModSharp.ServerCommand(sch.WorkshopId != 0
+                ? $"host_workshop_map {sch.WorkshopId.ToString(CultureInfo.InvariantCulture)}"
+                : $"changelevel {sch.MapName}");
+            return (true, $"map-change:{(sch.WorkshopId != 0 ? sch.WorkshopId.ToString() : sch.MapName)}");
+        }
+
+        // Already on the right map (or map-agnostic): activate now, and start if it only armed.
+        var r = _coordinator.TryActivate(sch.EventId, out _);
+        if (r == ActivateResult.Armed)
+            _coordinator.Start(out _);
+
+        return r is ActivateResult.Started or ActivateResult.Armed
+            ? (true, r.ToString())
+            : (false, r.ToString());
+    }
+
     // ── Prepare lane (requests + workshop staging) ─────────────────────────
 
     private async Task RequestTickAsync()
@@ -532,12 +593,21 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
         if (_pendingArmEventId is not { } id) return;
 
         _pendingArmEventId = null;
+        var fireStart = _pendingFireStart;
+        _pendingFireStart = false;
+
         var prev = _coordinator.StartMode;
-        _coordinator.StartMode = StartMode.Warmup; // arming is the point of Apply
+        _coordinator.StartMode = StartMode.Warmup; // arm first (works for both apply and scheduled fire)
         var result = _coordinator.TryActivate(id, out _);
+
+        // A scheduled fire runs unattended — end warmup into round 1 straight away.
+        if (fireStart && result == ActivateResult.Armed)
+            _coordinator.Start(out _);
+
         _coordinator.StartMode = prev;
 
-        _logger.LogInformation("[EventManager.Web] Post-apply arm '{Id}': {Result}.", id, result);
+        _logger.LogInformation("[EventManager.Web] Post-map {Kind} '{Id}': {Result}.",
+            fireStart ? "fire" : "arm", id, result);
     }
 
     void ISteamListener.OnItemInstalled(ulong publishedFileId)
