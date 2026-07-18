@@ -49,5 +49,24 @@ public interface IEventMode
     /// </summary>
     IReadOnlyDictionary<string, string> GameConVars => EmptyConVars;
 
+    /// <summary>
+    /// Maps this event can actually run on (e.g. Prop Hunt needs a per-map prop config).
+    /// Null or empty = any map. Surfaced to the website so request forms only offer maps
+    /// that work.
+    /// </summary>
+    IReadOnlyList<string>? SupportedMaps => null;
+
+    /// <summary>
+    /// Mode-specific operator verbs (role assignment etc.) — see <see cref="EventAction"/>.
+    /// Re-queried per render like settings.
+    /// </summary>
+    IReadOnlyList<EventAction> GetActions() => [];
+
+    /// <summary>
+    /// Invoke a declared action. For <see cref="EventActionArg.Player"/> the argument is the
+    /// target's SteamID64 as a string. Return false to reject (unknown key, bad target, …).
+    /// </summary>
+    bool TryInvokeAction(string key, string arg) => false;
+
     private static readonly Dictionary<string, string> EmptyConVars = new();
 }

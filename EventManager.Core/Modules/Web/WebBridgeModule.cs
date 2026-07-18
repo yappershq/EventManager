@@ -189,8 +189,9 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
     // ── Observe lane ───────────────────────────────────────────────────────
 
     private sealed record StateSnapshot(
-        string Map, int Players, string? ActiveId, string? ArmedId, string StartMode, bool Intro,
-        List<(string Id, string Name, string SettingsJson, string ConVarsJson)> Catalog);
+        string Map, int Players, string PlayersJson, string? ActiveId, string? ArmedId,
+        string StartMode, bool Intro,
+        List<(string Id, string Name, string SettingsJson, string ConVarsJson, string ActionsJson, string? MapsJson)> Catalog);
 
     private async Task HeartbeatTickAsync()
     {
@@ -217,25 +218,28 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
             StartMode     = snap.StartMode,
             IntroActive   = snap.Intro,
             DownloadsJson = downloadsJson,
+            PlayersJson   = snap.PlayersJson,
             UpdatedAt     = now,
         }).ExecuteCommandAsync();
 
-        foreach (var (id, name, settingsJson, conVarsJson) in snap.Catalog)
+        foreach (var (id, name, settingsJson, conVarsJson, actionsJson, mapsJson) in snap.Catalog)
         {
-            var payload = settingsJson + "|" + conVarsJson + "|" + name;
+            var payload = settingsJson + "|" + conVarsJson + "|" + actionsJson + "|" + mapsJson + "|" + name;
             if (_lastCatalogJson.TryGetValue(id, out var prev) && prev == payload) continue;
 
             _lastCatalogJson[id] = payload;
             await _db.Storageable(new EmCatalog
             {
-                Id           = $"{_tag}:{id}",
-                ServerTag    = _tag,
-                EventId      = id,
-                DisplayName  = name,
-                SettingsJson = settingsJson,
-                ConVarsJson  = conVarsJson,
-                Registered   = true,
-                UpdatedAt    = now,
+                Id                = $"{_tag}:{id}",
+                ServerTag         = _tag,
+                EventId           = id,
+                DisplayName       = name,
+                SettingsJson      = settingsJson,
+                ConVarsJson       = conVarsJson,
+                ActionsJson       = actionsJson,
+                SupportedMapsJson = mapsJson,
+                Registered        = true,
+                UpdatedAt         = now,
             }).ExecuteCommandAsync();
         }
 
@@ -244,11 +248,14 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
 
     private StateSnapshot CaptureSnapshot()
     {
-        var players = 0;
+        var players = new List<object>();
         foreach (var c in _bridge.ClientManager.GetGameClients(inGame: true))
-            if (!c.IsFakeClient) players++;
+        {
+            if (c.IsFakeClient) continue;
+            players.Add(new { slot = (int)(byte)c.Slot, steamId = c.SteamId.ToString(), name = c.Name });
+        }
 
-        var catalog = new List<(string, string, string, string)>();
+        var catalog = new List<(string, string, string, string, string, string?)>();
         foreach (var mode in _coordinator.Registered)
         {
             var settings = mode.GetSettings().Select(s => new
@@ -256,14 +263,22 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
                 key = s.Key, displayName = s.DisplayName, type = s.Type.ToString(),
                 value = s.Value, choices = s.Choices,
             });
+            var actions = mode.GetActions().Select(a => new
+            {
+                key = a.Key, displayName = a.DisplayName, arg = a.Arg.ToString(),
+            });
+            var maps = mode.SupportedMaps;
             catalog.Add((mode.Id, mode.DisplayName,
                 JsonSerializer.Serialize(settings),
-                JsonSerializer.Serialize(mode.GameConVars)));
+                JsonSerializer.Serialize(mode.GameConVars),
+                JsonSerializer.Serialize(actions),
+                maps is { Count: > 0 } ? JsonSerializer.Serialize(maps) : null));
         }
 
         return new StateSnapshot(
             _bridge.ModSharp.GetMapName() ?? "unknown",
-            players,
+            players.Count,
+            JsonSerializer.Serialize(players),
             _coordinator.ActiveEventId,
             _coordinator.ArmedEventId,
             _coordinator.StartMode.ToString(),
@@ -384,6 +399,15 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
             case "apply":
                 if (a.Length < 1 || !int.TryParse(a[0], out var reqId)) return (false, "usage: apply <requestId>");
                 return ApplyRequest(reqId);
+
+            case "action":
+                if (a.Length < 2) return (false, "usage: action <eventId> <key> [arg]");
+                var actMode = _coordinator.Find(a[0]);
+                if (actMode is null) return (false, "unknown-event");
+                var actArg = a.Length >= 3 ? string.Join(' ', a[2..]) : "";
+                return actMode.TryInvokeAction(a[1], actArg)
+                    ? (true, $"action:{a[0]}.{a[1]}")
+                    : (false, "action-rejected");
 
             default:
                 return (false, $"unknown-command:{command}");

@@ -26,6 +26,10 @@ internal sealed class EmState
     [SugarColumn(ColumnDataType = "TEXT", IsNullable = true)]
     public string? DownloadsJson { get; set; }
 
+    /// <summary>[{slot, steamId, name}] — online humans, for website role pickers.</summary>
+    [SugarColumn(ColumnDataType = "TEXT", IsNullable = true)]
+    public string? PlayersJson { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }
 
@@ -43,6 +47,11 @@ internal sealed class EmCatalog
 
     [SugarColumn(ColumnDataType = "TEXT")] public string SettingsJson { get; set; } = "[]";
     [SugarColumn(ColumnDataType = "TEXT")] public string ConVarsJson  { get; set; } = "{}";
+    [SugarColumn(ColumnDataType = "TEXT")] public string ActionsJson  { get; set; } = "[]";
+
+    /// <summary>JSON list of playable maps; null = any map.</summary>
+    [SugarColumn(ColumnDataType = "TEXT", IsNullable = true)]
+    public string? SupportedMapsJson { get; set; }
 
     public bool     Registered { get; set; } = true;
     public DateTime UpdatedAt  { get; set; }
