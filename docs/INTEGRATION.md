@@ -56,6 +56,16 @@ always safe.
   immediately.
 - `RequiresRoundRestart => true` (default) makes the manager restart the round when starting
   outside a warmup. Return false only if your mode applies cleanly mid-round.
+- **Game convars belong in `GameConVars`** (v1.1.0+), not in Activate/Deactivate: declare e.g.
+  `["mp_playerid"] = "2"` and the manager captures current values on start, applies yours, and
+  restores the originals on deactivate/switch — even if your teardown throws.
+- **Deactivate must restore ENTITY-LEVEL player state explicitly** (transmit blocks, model
+  scale, render color): controller/pawn entities are REUSED across respawns and warmup starts,
+  so "the next round will fix it" is false. Sweep in-game players in your teardown
+  (see InvisibleMod's UnhidePlayer / MiniHumans' RestoreSize sweeps).
+- **Operational rule: never hot-reload EventManager.Core alone.** Consumers hold registrations
+  into the old coordinator; after a Core-only reload the event registry is empty until every
+  mode plugin reloads too. A Core redeploy on a live event server = full server restart.
 - Settings: expose via `GetSettings()` (re-queried per render, return live values), validate in
   `TrySetSetting(key, value)` — strings at the boundary, you own parsing and state. No convars.
 
