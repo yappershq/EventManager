@@ -178,6 +178,7 @@ event_templates                       -- v1.5 shape; v2 adds versioning columns
   map_json        -- {kind: workshop|stock, workshop_id?, map_name?} NULL = current map
   convar_pins     -- {cvar:value}, admin-only edit, server allowlist (§3.4)
   start_mode · end_rule JSON          -- {kind: manual|after_minutes|after_rounds, n?}
+  record_gotv BOOL DEFAULT false      -- GOTV is OPT-IN per template/run (prefix decision)
   announce_json   -- discord copy templates, {event}{map}{time}{streamer} vars
   schema_hash     -- catalog hash at save time (drift anchor)
   last_used_at · archived_at NULL · created_at · updated_at
@@ -295,7 +296,7 @@ Site backend polls `event_state`/`event_commands` every 2s, pushes over existing
 
 ### 5. Post-event
 
-- **Auto-GOTV** (v1.5): run → step past `start_event` starts recording via Gotv's shared interface (optional-gate; absent → `gotv_status NULL`); `end_event` stops; uploader posts, server writes `gotv_url`. Failure → `gotv_status=failed` + webhook, **never blocks the event**.
+- **GOTV recording — OPT-IN, default OFF** (prefix decision 2026-07-18): recorded ONLY when the template/run explicitly sets `record_gotv: true` (template flag + per-run override; absent/false → `gotv_status NULL`, Gotv untouched). When requested: step past `start_event` starts recording via Gotv's shared interface (optional-gate), `end_event` stops, uploader posts, server writes `gotv_url`. Failure → `gotv_status=failed` + webhook, **never blocks the event**.
 - **Summary** (v2): manager tracks generic stats during the run (peak players, rounds, duration, map) → `summary_json`; site cron sees `completed` → Discord embed + permanent event page; when `gotv_url` lands late, **edits** the embed via `discord_message_id` (or threads "📼 GOTV: <url>"). No summary (crash) → minimal "event ended" from timestamps. v3: `IEventMode.GetSummary()` default-member contract extension for per-mode lines ("Best hider: X, 4:31 survived") — public Shared contract touch, NuGet minor bump.
 - **Auto-extend** (v3): `extend_policy {if_players_gte, extend_minutes, max_extends}` at the end condition, optional player vote; the manual "Extend +30m" button ships in v2.
 
@@ -327,7 +328,7 @@ Launch demo: **weekly Prop Hunt night** — pure composition of shipped pieces (
 ### (c) Top-5 wow-per-effort (build first)
 
 1. **Announce sequence** — site cron + Discord T-30/T-10/T-1 + in-game chat/center from the same run row. Near-zero risk; turns "a setting changed" into "an *event* is happening".
-2. **Auto-GOTV + link** — Gotv plugin already exists with uploaders; pure wiring (optional interface + two calls + two columns). Every event auto-produces a VOD.
+2. **Opt-in GOTV + link** — Gotv plugin already exists with uploaders; pure wiring (optional interface + two calls + two columns + a `record_gotv` template flag, default OFF). Events that ask for it auto-produce a VOD.
 3. **Control-room primary-action button + schema-driven settings drawers** — the flagship page's core; renders entirely from observe-lane data that v1 already mirrors, and makes every later feature legible.
 4. **Scheduled auto-apply + arm (with empty-server fallback)** — removes the human from the critical path; the load-bearing automation every night composes with, made trustworthy by the fallback.
 5. **Post-event Discord summary + create-template-from-live** — closes the loop publicly after every event (advertising the next one) and makes "run it again exactly like last Friday" one click.
