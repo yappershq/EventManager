@@ -1,12 +1,32 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Public contract assembly — the future NuGet package (YappersHQ.EventManager.Shared).
-    Fun-mode plugins reference THIS (never Core). No ORM / 3rd-party types — keep clean
-    for cross-ALC consumption. Directory.Build.props routes .Shared suffix to .build/shared/.
+    Public contract assembly — NuGet package YappersHQ.EventManager.Shared.
+    Fun-mode plugins reference THIS (never Core). Pure System-only contract (no ModSharp/3rd-party
+    types) so the package ships dependency-free and stays clean for cross-ALC consumption.
+    Directory.Build.props routes the .Shared suffix to .build/shared/.
+    Pack via `dotnet pack -c Release`; consumers use ExcludeAssets="runtime" — the runtime DLL is
+    provided by the EventManager plugin via /game/sharp/shared/.
   -->
+
+  <PropertyGroup>
+    <PackageId>YappersHQ.EventManager.Shared</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>yappershq</Authors>
+    <Company>yappershq</Company>
+    <Description>Public contract (IEventManagerShared / IEventMode) for registering switchable event modes with the ModSharp/CS2 EventManager gate from fun-mode plugins. Compile-time only — the runtime DLL is provided by the EventManager plugin via /game/sharp/shared/.</Description>
+    <PackageTags>modsharp;cs2;eventmanager;events;gamemode</PackageTags>
+    <PackageProjectUrl>https://github.com/yappershq/EventManager</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/yappershq/EventManager</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
   <ItemGroup>
-    <PackageReference Include="ModSharp.Sharp.Shared" Version="*" ExcludeAssets="runtime" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
