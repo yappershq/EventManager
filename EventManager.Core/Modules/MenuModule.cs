@@ -502,6 +502,15 @@ internal sealed class MenuModule : IModule
             case ActivateResult.Failed:
                 Loc.Chat(lm, ctrl.Client, "EventManager_ActivateFailed", mode.Id);
                 break;
+            case ActivateResult.Already:
+                Loc.Chat(lm, ctrl.Client,
+                    string.Equals(_coordinator.ArmedEventId, mode.Id, StringComparison.OrdinalIgnoreCase)
+                        ? "EventManager_AlreadyArmed"
+                        : "EventManager_AlreadyActive", mode.DisplayName);
+                break;
+            case ActivateResult.Unknown:
+                Loc.Chat(lm, ctrl.Client, "EventManager_Unknown", mode.Id);
+                break;
         }
     }
 

@@ -133,6 +133,15 @@ internal sealed class CommandsModule : IModule
     {
         var items = new List<AdminPanelMenuItem>();
 
+        if (_coordinator.ArmedEventId is { } armedId && _coordinator.Find(armedId) is { } armed)
+        {
+            items.Add(new AdminPanelMenuItem
+            {
+                Label      = $"▶ Start: {armed.DisplayName}",
+                OnSelected = slot => _coordinator.Start(out _),
+            });
+        }
+
         if (_coordinator.ActiveEventId is { } activeId && _coordinator.Find(activeId) is { } active)
         {
             items.Add(new AdminPanelMenuItem
@@ -145,14 +154,23 @@ internal sealed class CommandsModule : IModule
         foreach (var mode in _coordinator.Registered)
         {
             var m = mode; // capture per item
+            var isArmed = string.Equals(_coordinator.ArmedEventId, m.Id, StringComparison.OrdinalIgnoreCase);
             items.Add(new AdminPanelMenuItem
             {
-                Label      = (_coordinator.IsActive(m.Id) ? "● " : "") + m.DisplayName,
+                Label      = (_coordinator.IsActive(m.Id) ? "● " : isArmed ? "▶ " : "") + m.DisplayName,
                 OnSelected = slot =>
                 {
                     if (_coordinator.IsActive(m.Id))
                     {
                         _coordinator.DeactivateCurrent();
+                        return;
+                    }
+
+                    // Clicking the armed row = start it (an AdminPanel-only operator is
+                    // otherwise stuck in the lobby with no Start affordance).
+                    if (string.Equals(_coordinator.ArmedEventId, m.Id, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _coordinator.Start(out _);
                         return;
                     }
 
@@ -301,13 +319,17 @@ internal sealed class CommandsModule : IModule
         var lm     = _bridge.LocalizerManager;
         var result = _coordinator.TryActivate(id, out var mode);
 
+        var isArmed = mode is not null
+            && string.Equals(_coordinator.ArmedEventId, mode.Id, StringComparison.OrdinalIgnoreCase);
+
         Loc.Chat(lm, client, result switch
         {
-            ActivateResult.Started => "EventManager_Activated",
-            ActivateResult.Armed   => "EventManager_Armed",
-            ActivateResult.Already => "EventManager_AlreadyActive",
-            ActivateResult.Failed  => "EventManager_ActivateFailed",
-            _                      => "EventManager_Unknown",
+            ActivateResult.Started                => "EventManager_Activated",
+            ActivateResult.Armed                  => "EventManager_Armed",
+            ActivateResult.Already when isArmed   => "EventManager_AlreadyArmed",
+            ActivateResult.Already                => "EventManager_AlreadyActive",
+            ActivateResult.Failed                 => "EventManager_ActivateFailed",
+            _                                     => "EventManager_Unknown",
         }, mode?.DisplayName ?? id);
 
         if (result is ActivateResult.Started or ActivateResult.Armed)

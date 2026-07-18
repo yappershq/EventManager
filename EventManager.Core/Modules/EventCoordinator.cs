@@ -40,17 +40,19 @@ internal sealed class EventCoordinator : IModule, IEventManagerShared
     private readonly InterfaceBridge           _bridge;
 
     private readonly Dictionary<string, IEventMode> _events = new(StringComparer.OrdinalIgnoreCase);
+    private readonly StreamToolsModule              _tools;
 
-    private string? _activeId;
-    private string? _armedId;
-    private bool    _inLobby;
+    private string?                     _activeId;
+    private string?                     _armedId;
+    private Dictionary<string, string>? _conVarRevert;
 
     public StartMode StartMode { get; set; } = StartMode.Warmup;
 
-    public EventCoordinator(ILogger<EventCoordinator> logger, InterfaceBridge bridge)
+    public EventCoordinator(ILogger<EventCoordinator> logger, InterfaceBridge bridge, StreamToolsModule tools)
     {
         _logger = logger;
         _bridge = bridge;
+        _tools  = tools;
     }
 
     // ── IModule ────────────────────────────────────────────────────────────
@@ -123,7 +125,10 @@ internal sealed class EventCoordinator : IModule, IEventManagerShared
         }
 
         if (!ActivateCore(mode))
+        {
+            EnterLobby(); // ground-state invariant: a failed switch never strands a live round
             return ActivateResult.Failed;
+        }
 
         GoLive(mode.RequiresRoundRestart);
         return ActivateResult.Started;
@@ -184,9 +189,41 @@ internal sealed class EventCoordinator : IModule, IEventManagerShared
             return false;
         }
 
+        ApplyGameConVars(mode);
+
         _activeId = mode.Id;
         _logger.LogInformation("[EventManager] Event '{Id}' activated.", mode.Id);
         return true;
+    }
+
+    /// <summary>Capture current values of the event's declared convars, then apply its set.</summary>
+    private void ApplyGameConVars(IEventMode mode)
+    {
+        var wanted = mode.GameConVars;
+        if (wanted.Count == 0) return;
+
+        _conVarRevert = new Dictionary<string, string>();
+        foreach (var (name, value) in wanted)
+        {
+            if (_bridge.ConVarManager.FindConVar(name) is not { } cvar)
+            {
+                _logger.LogWarning("[EventManager] GameConVar '{Name}' not found — skipping.", name);
+                continue;
+            }
+
+            _conVarRevert[name] = cvar.GetString();
+            cvar.SetString(value);
+        }
+    }
+
+    private void RevertGameConVars()
+    {
+        if (_conVarRevert is null) return;
+
+        foreach (var (name, value) in _conVarRevert)
+            _bridge.ConVarManager.FindConVar(name)?.SetString(value);
+
+        _conVarRevert = null;
     }
 
     /// <summary>Tear down the running event. No game transition — callers decide.</summary>
@@ -212,29 +249,38 @@ internal sealed class EventCoordinator : IModule, IEventManagerShared
             _logger.LogError(ex, "[EventManager] Event '{Id}' threw in Deactivate — state may need a map change.", mode.Id);
         }
 
+        // Manager-owned even when the event's teardown failed.
+        RevertGameConVars();
+
         return mode;
     }
 
-    /// <summary>Paused warmup lobby — the between-events ground state.</summary>
+    /// <summary>
+    /// Paused warmup lobby — the between-events ground state. Always re-issued: map changes and
+    /// gamemode cfg re-execs reset warmup state behind our back, so there is deliberately no
+    /// "already in lobby" flag (re-starting a warmup is harmless).
+    /// </summary>
     private void EnterLobby()
     {
-        if (_inLobby) return;
-
         _bridge.ModSharp.ServerCommand("mp_warmup_start");
         _bridge.ModSharp.ServerCommand("mp_warmup_pausetimer 1");
-        _inLobby = true;
     }
 
     /// <summary>Transition into live play: end any warmup, restart the round if the mode needs it.</summary>
     private void GoLive(bool requiresRoundRestart)
     {
+        // Intro mode must never leak into a live event — with win conditions ignored the round
+        // would simply never end.
+        _tools.IntroOff();
+
+        // Decide from REAL game state, not a flag: flags go stale across map changes/cfg re-execs.
+        var inWarmup = _bridge.ModSharp.GetGameRules()?.IsWarmupPeriod ?? false;
+
         _bridge.ModSharp.ServerCommand("mp_warmup_pausetimer 0");
         _bridge.ModSharp.ServerCommand("mp_warmup_end"); // no-op when not in warmup
 
-        if (!_inLobby && requiresRoundRestart)
+        if (!inWarmup && requiresRoundRestart)
             _bridge.ModSharp.ServerCommand("mp_restartgame 1");
-
-        _inLobby = false;
     }
 
     private void Unregister(IEventMode mode)

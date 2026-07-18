@@ -40,4 +40,14 @@ public interface IEventMode
     /// parse + validate here and return false to reject. Applies live when the mode is active.
     /// </summary>
     bool TrySetSetting(string key, string value) => false;
+
+    /// <summary>
+    /// Game convars this event needs while active (e.g. <c>mp_playerid 2</c> for hide-and-seek
+    /// modes). The MANAGER owns them: current values are captured when the event starts, the
+    /// event's values applied, and the originals restored on deactivate/switch — even when the
+    /// event's own teardown fails. Do not set these yourself in Activate/Deactivate.
+    /// </summary>
+    IReadOnlyDictionary<string, string> GameConVars => EmptyConVars;
+
+    private static readonly Dictionary<string, string> EmptyConVars = new();
 }

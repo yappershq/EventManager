@@ -4,6 +4,7 @@
 
   "EventManager_Armed":            { "en-US": " {{green}}[Events]{{default}} {{lime}}{0}{{default}} armed in the warmup lobby — {{lime}}!events start{{default}} when ready." },
   "EventManager_Disarmed":         { "en-US": " {{green}}[Events]{{default}} {{lime}}{0}{{default}} disarmed — lobby stays vanilla." },
+  "EventManager_AlreadyArmed":     { "en-US": " {{green}}[Events]{{default}} {{lime}}{0}{{default}} is already armed — {{lime}}!events start{{default}} when ready." },
   "EventManager_NoArmed":          { "en-US": " {{green}}[Events]{{default}} Nothing armed to start." },
   "EventManager_StartMode":        { "en-US": " {{green}}[Events]{{default}} Start mode: {{lime}}{0}" },
   "EventManager_List_ArmedSuffix": { "en-US": " {{lime}}▶ ARMED" },

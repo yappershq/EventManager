@@ -111,7 +111,8 @@ internal sealed class StreamToolsModule : IModule
         }
 
         Loc.CenterAll(_bridge.LocalizerManager, _bridge.ClientManager, "EventManager_Countdown_Tick", remaining);
-        _bridge.ModSharp.PushTimer(() => Tick(gen, remaining - 1), 1.0,
-            GameTimerFlags.StopOnRoundEnd | GameTimerFlags.StopOnMapEnd);
+        // StopOnMapEnd only: a round transition mid-countdown (e.g. the operator pressing Start)
+        // must not kill the chain — "GO!" still has to land.
+        _bridge.ModSharp.PushTimer(() => Tick(gen, remaining - 1), 1.0, GameTimerFlags.StopOnMapEnd);
     }
 }
