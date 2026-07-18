@@ -9,14 +9,18 @@ using Sharp.Shared.Objects;
 namespace EventManager.Modules;
 
 /// <summary>
-/// The !events menu — AdminPanel-style nested navigation: status-aware root, an Events page,
-/// per-event pages with picker submenus for settings (choices get their own page with a ●
-/// marker; numbers get an adjuster page), a confirm page when switching away from a running
-/// event, and a Stream Tools page. Menus are built lazily per navigation (ctrl.Next(factory))
-/// so every page always renders live state; factory item titles keep toggles fresh on Refresh().
+/// The !events menu — AdminPanel-style nested navigation built on the full MenuManager surface:
+/// lazy <c>SubMenu(titleFactory, menuFactory)</c> pages (always render live state), generator
+/// items carrying per-item <c>Color</c> + selection <c>HintText</c>, <c>Spacer()</c> section
+/// grouping, dynamic <c>DisabledItem</c> factories, and per-viewer localized <c>Title</c>
+/// factories. Every item title/hint resolves against the RENDERING viewer (the delegate's
+/// client parameter), never a captured opener.
 /// </summary>
 internal sealed class MenuModule : IModule
 {
+    private const string ColorActive  = "#7CFC00"; // active event rows / confirm
+    private const string ColorDanger  = "#FF6B6B"; // disable / stop actions
+
     private readonly InterfaceBridge   _bridge;
     private readonly EventCoordinator  _coordinator;
     private readonly StreamToolsModule _tools;
@@ -48,30 +52,34 @@ internal sealed class MenuModule : IModule
         var lm = _bridge.LocalizerManager;
 
         var menu = Menu.Create()
-            .Title(Loc.Text(lm, client, "EventManager_Menu_Title"))
+            .Title(viewer => Loc.Text(lm, viewer, "EventManager_Menu_Title"))
 
-            // Status line — click jumps to the active event's page (or the list when vanilla).
-            .Item(
-                _ => _coordinator.ActiveEventId is { } id && _coordinator.Find(id) is { } active
-                    ? Loc.Text(lm, client, "EventManager_Menu_Status_Active", active.DisplayName)
-                    : Loc.Text(lm, client, "EventManager_Menu_Status_None"),
-                ctrl =>
+            // Status line — colored when an event runs; click jumps to the relevant page.
+            .Item((IGameClient viewer, ref MenuItemContext ctx) =>
+            {
+                if (_coordinator.ActiveEventId is { } id && _coordinator.Find(id) is { } active)
                 {
-                    if (_coordinator.ActiveEventId is { } id && _coordinator.Find(id) is { } active)
-                        ctrl.Next(c => BuildEventPage(c, active));
-                    else
-                        ctrl.Next(BuildEventsPage);
-                })
+                    ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_Status_Active", active.DisplayName);
+                    ctx.Color    = ColorActive;
+                    ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Status_Active");
+                    ctx.Action   = ctrl => ctrl.Next(c => BuildEventPage(c, active));
+                }
+                else
+                {
+                    ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_Status_None");
+                    ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Status_None");
+                    ctx.Action   = ctrl => ctrl.Next(BuildEventsPage);
+                }
+            })
 
-            .Item(
-                _ => Loc.Text(lm, client, "EventManager_Menu_Events", _coordinator.Registered.Count),
-                ctrl => ctrl.Next(BuildEventsPage))
-
-            .Item(
-                Loc.Text(lm, client, "EventManager_Menu_Tools"),
-                ctrl => ctrl.Next(BuildToolsPage))
-
-            .ExitItem("Exit")
+            .Spacer()
+            .SubMenu(
+                viewer => Loc.Text(lm, viewer, "EventManager_Menu_Events", _coordinator.Registered.Count),
+                BuildEventsPage)
+            .SubMenu(
+                viewer => Loc.Text(lm, viewer, "EventManager_Menu_Tools"),
+                BuildToolsPage)
+            .ExitItem()
             .Build();
 
         mm.DisplayMenu(client, menu);
@@ -84,17 +92,19 @@ internal sealed class MenuModule : IModule
     {
         var lm = _bridge.LocalizerManager;
 
-        var builder = Menu.Create().Title(Loc.Text(lm, client, "EventManager_Menu_Events_Title"));
+        var builder = Menu.Create()
+            .Title(viewer => Loc.Text(lm, viewer, "EventManager_Menu_Events_Title"));
 
-        // Quick "disable current" on top while an event runs. Generator item: leaving Title
-        // unset skips the row entirely when the server is vanilla.
+        // Quick "disable current" on top while an event runs (Title unset → row skipped when vanilla).
         builder = builder.Item((IGameClient viewer, ref MenuItemContext ctx) =>
         {
             if (_coordinator.ActiveEventId is not { } id || _coordinator.Find(id) is not { } active)
                 return;
 
-            ctx.Title  = Loc.Text(lm, viewer, "EventManager_Menu_DisableCurrent", active.DisplayName);
-            ctx.Action = ctrl =>
+            ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_DisableCurrent", active.DisplayName);
+            ctx.Color    = ColorDanger;
+            ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Disable");
+            ctx.Action   = ctrl =>
             {
                 var stopped = _coordinator.DeactivateCurrent();
                 if (stopped is not null)
@@ -104,17 +114,22 @@ internal sealed class MenuModule : IModule
         });
 
         if (_coordinator.Registered.Count == 0)
-            builder = builder.DisabledItem(Loc.Text(lm, client, "EventManager_Menu_NoEvents"));
+            builder = builder.DisabledItem(viewer => Loc.Text(lm, viewer, "EventManager_Menu_NoEvents"));
 
         foreach (var mode in _coordinator.Registered)
         {
             var m = mode; // capture per item
-            builder = builder.Item(
-                _ => (_coordinator.IsActive(m.Id) ? "● " : "") + m.DisplayName,
-                ctrl => ctrl.Next(c => BuildEventPage(c, m)));
+            builder = builder.Item((IGameClient viewer, ref MenuItemContext ctx) =>
+            {
+                var active = _coordinator.IsActive(m.Id);
+                ctx.Title    = (active ? "● " : "") + m.DisplayName;
+                ctx.Color    = active ? ColorActive : null;
+                ctx.HintText = active ? Loc.Text(lm, viewer, "EventManager_Hint_ActiveRow") : null;
+                ctx.Action   = ctrl => ctrl.Next(c => BuildEventPage(c, m));
+            });
         }
 
-        return builder.BackItem("« Back").ExitItem("Exit").Build();
+        return builder.BackItem().ExitItem().Build();
     }
 
     // ── One event ──────────────────────────────────────────────────────────
@@ -125,21 +140,30 @@ internal sealed class MenuModule : IModule
 
         var builder = Menu.Create().Title(mode.DisplayName);
 
-        // Enable / Disable — with a confirm page when another event is running.
-        builder = builder.Item(
-            _ => Loc.Text(lm, client, _coordinator.IsActive(mode.Id)
-                ? "EventManager_Menu_Disable"
-                : "EventManager_Menu_Enable"),
-            ctrl =>
+        // Enable / Disable — colored, hinted, with a confirm page when another event runs.
+        builder = builder.Item((IGameClient viewer, ref MenuItemContext ctx) =>
+        {
+            if (_coordinator.IsActive(mode.Id))
             {
-                if (_coordinator.IsActive(mode.Id))
+                ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_Disable");
+                ctx.Color    = ColorDanger;
+                ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Disable");
+                ctx.Action   = ctrl =>
                 {
                     _coordinator.DeactivateCurrent();
                     Loc.Chat(lm, ctrl.Client, "EventManager_Deactivated", mode.DisplayName);
                     ctrl.Refresh();
-                    return;
-                }
+                };
+                return;
+            }
 
+            ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_Enable");
+            ctx.Color    = ColorActive;
+            ctx.HintText = Loc.Text(lm, viewer, mode.RequiresRoundRestart
+                ? "EventManager_Hint_EnableRestart"
+                : "EventManager_Hint_Enable");
+            ctx.Action   = ctrl =>
+            {
                 if (_coordinator.ActiveEventId is { } otherId && _coordinator.Find(otherId) is { } other)
                 {
                     ctrl.Next(c => BuildConfirmSwitchPage(c, other, mode));
@@ -148,49 +172,67 @@ internal sealed class MenuModule : IModule
 
                 Activate(ctrl, mode);
                 ctrl.Refresh();
-            });
+            };
+        });
 
-        foreach (var setting in mode.GetSettings())
+        var settings = mode.GetSettings();
+        if (settings.Count > 0)
+            builder = builder.Spacer();
+
+        foreach (var setting in settings)
         {
             var key = setting.Key; // capture
 
             switch (setting.Type)
             {
                 case EventSettingType.Bool:
-                    builder = builder.Item(
-                        _ => SettingTitle(mode, key, boolAsState: true),
-                        ctrl =>
+                    builder = builder.Item((IGameClient viewer, ref MenuItemContext ctx) =>
+                    {
+                        ctx.Title    = SettingTitle(mode, key, boolAsState: true);
+                        ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Toggle");
+                        ctx.Action   = ctrl =>
                         {
                             var on = bool.TryParse(Current(mode, key), out var b)
                                 ? b
                                 : Current(mode, key) == "1";
                             mode.TrySetSetting(key, on ? "false" : "true");
                             ctrl.Refresh();
-                        });
+                        };
+                    });
                     break;
 
                 case EventSettingType.Choice:
-                    builder = builder.Item(
-                        _ => SettingTitle(mode, key) + " »",
-                        ctrl => ctrl.Next(c => BuildChoicePage(c, mode, key)));
+                    builder = builder.Item((IGameClient viewer, ref MenuItemContext ctx) =>
+                    {
+                        ctx.Title    = SettingTitle(mode, key) + " »";
+                        ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Pick");
+                        ctx.Action   = ctrl => ctrl.Next(c => BuildChoicePage(c, mode, key));
+                    });
                     break;
 
                 case EventSettingType.Int:
                 case EventSettingType.Float:
-                    builder = builder.Item(
-                        _ => SettingTitle(mode, key) + " »",
-                        ctrl => ctrl.Next(c => BuildNumberPage(c, mode, key, setting.Type)));
+                    var numType = setting.Type; // capture
+                    builder = builder.Item((IGameClient viewer, ref MenuItemContext ctx) =>
+                    {
+                        ctx.Title    = SettingTitle(mode, key) + " »";
+                        ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Pick");
+                        ctx.Action   = ctrl => ctrl.Next(c => BuildNumberPage(c, mode, key, numType));
+                    });
                     break;
 
-                default: // Text — edited via chat, shown here for discoverability
-                    builder = builder.DisabledItem(
-                        SettingTitle(mode, key) + " " +
-                        Loc.Text(lm, client, "EventManager_Menu_SettingHint", mode.Id, key));
+                default: // Text — edited via chat; hint carries the exact command
+                    builder = builder.Item((IGameClient viewer, ref MenuItemContext ctx) =>
+                    {
+                        ctx.Title    = SettingTitle(mode, key);
+                        ctx.State    = MenuItemState.Disabled;
+                        ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_TextSetting", mode.Id, key);
+                    });
                     break;
             }
         }
 
-        return builder.BackItem("« Back").ExitItem("Exit").Build();
+        return builder.BackItem().ExitItem().Build();
     }
 
     private Menu BuildConfirmSwitchPage(IGameClient client, IEventMode from, IEventMode to)
@@ -198,15 +240,24 @@ internal sealed class MenuModule : IModule
         var lm = _bridge.LocalizerManager;
 
         return Menu.Create()
-            .Title(Loc.Text(lm, client, "EventManager_Menu_Confirm_Title"))
-            .DisabledItem(Loc.Text(lm, client, "EventManager_Menu_Confirm_Line", from.DisplayName, to.DisplayName))
-            .Item(Loc.Text(lm, client, "EventManager_Menu_Confirm_Yes"), ctrl =>
+            .Title(viewer => Loc.Text(lm, viewer, "EventManager_Menu_Confirm_Title"))
+            .DisabledItem(viewer => Loc.Text(lm, viewer, "EventManager_Menu_Confirm_Line", from.DisplayName, to.DisplayName))
+            .Spacer()
+            .Item((IGameClient viewer, ref MenuItemContext ctx) =>
             {
-                Activate(ctrl, to);
-                ctrl.Exit();
+                ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_Confirm_Yes");
+                ctx.Color    = ColorActive;
+                ctx.HintText = Loc.Text(lm, viewer, to.RequiresRoundRestart
+                    ? "EventManager_Hint_EnableRestart"
+                    : "EventManager_Hint_Enable");
+                ctx.Action   = ctrl =>
+                {
+                    Activate(ctrl, to);
+                    ctrl.Exit();
+                };
             })
-            .BackItem(Loc.Text(lm, client, "EventManager_Menu_Confirm_No"))
-            .ExitItem("Exit")
+            .BackItem(viewer => Loc.Text(lm, viewer, "EventManager_Menu_Confirm_No"))
+            .ExitItem()
             .Build();
     }
 
@@ -222,17 +273,21 @@ internal sealed class MenuModule : IModule
             foreach (var choice in choices)
             {
                 var c = choice; // capture
-                builder = builder.Item(
-                    _ => (Current(mode, key) == c ? "● " : "") + c,
-                    ctrl =>
+                builder = builder.Item((IGameClient viewer, ref MenuItemContext ctx) =>
+                {
+                    var current = Current(mode, key) == c;
+                    ctx.Title  = (current ? "● " : "") + c;
+                    ctx.Color  = current ? ColorActive : null;
+                    ctx.Action = ctrl =>
                     {
                         mode.TrySetSetting(key, c);
                         ctrl.Refresh();
-                    });
+                    };
+                });
             }
         }
 
-        return builder.BackItem("« Back").ExitItem("Exit").Build();
+        return builder.BackItem().ExitItem().Build();
     }
 
     private Menu BuildNumberPage(IGameClient client, IEventMode mode, string key, EventSettingType type)
@@ -244,15 +299,17 @@ internal sealed class MenuModule : IModule
 
         var builder = Menu.Create()
             .Title(setting?.DisplayName ?? key)
-            .Item(_ => Loc.Text(lm, client, "EventManager_Menu_Number_Current", Current(mode, key)),
-                  ctrl => ctrl.Refresh());
+            .DisabledItem(viewer => Loc.Text(lm, viewer, "EventManager_Menu_Number_Current", Current(mode, key)))
+            .Spacer();
 
         foreach (var delta in new[] { -big, -small, small, big })
         {
             var d = delta; // capture
-            builder = builder.Item(
-                (d > 0 ? "+" : "−") + System.Math.Abs(d).ToString("0.##", CultureInfo.InvariantCulture),
-                ctrl =>
+            builder = builder.Item((IGameClient viewer, ref MenuItemContext ctx) =>
+            {
+                ctx.Title    = (d > 0 ? "+" : "−") + System.Math.Abs(d).ToString("0.##", CultureInfo.InvariantCulture);
+                ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Adjust", mode.Id, key);
+                ctx.Action   = ctrl =>
                 {
                     if (double.TryParse(Current(mode, key), NumberStyles.Float, CultureInfo.InvariantCulture, out var cur))
                     {
@@ -266,14 +323,11 @@ internal sealed class MenuModule : IModule
                     }
 
                     ctrl.Refresh();
-                });
+                };
+            });
         }
 
-        return builder
-            .DisabledItem(Loc.Text(lm, client, "EventManager_Menu_SettingHint", mode.Id, key))
-            .BackItem("« Back")
-            .ExitItem("Exit")
-            .Build();
+        return builder.BackItem().ExitItem().Build();
     }
 
     // ── Stream tools ───────────────────────────────────────────────────────
@@ -283,12 +337,14 @@ internal sealed class MenuModule : IModule
         var lm = _bridge.LocalizerManager;
 
         return Menu.Create()
-            .Title(Loc.Text(lm, client, "EventManager_Menu_Tools"))
-            .Item(
-                _ => Loc.Text(lm, client, _tools.IntroActive
-                    ? "EventManager_Menu_IntroOff"
-                    : "EventManager_Menu_IntroOn"),
-                ctrl =>
+            .Title(viewer => Loc.Text(lm, viewer, "EventManager_Menu_Tools"))
+            .Item((IGameClient viewer, ref MenuItemContext ctx) =>
+            {
+                var on = _tools.IntroActive;
+                ctx.Title    = Loc.Text(lm, viewer, on ? "EventManager_Menu_IntroOff" : "EventManager_Menu_IntroOn");
+                ctx.Color    = on ? ColorActive : null;
+                ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Intro");
+                ctx.Action   = ctrl =>
                 {
                     if (_tools.IntroActive)
                     {
@@ -301,38 +357,49 @@ internal sealed class MenuModule : IModule
                     }
 
                     ctrl.Refresh();
-                })
-            .Item(Loc.Text(lm, client, "EventManager_Menu_RespawnAll"), ctrl =>
-            {
-                var n = _tools.RespawnAll();
-                Loc.Chat(lm, ctrl.Client, "EventManager_RespawnAll", n);
-                ctrl.Refresh();
+                };
             })
-            .Item(Loc.Text(lm, client, "EventManager_Menu_Countdown") + " »",
-                  ctrl => ctrl.Next(BuildCountdownPage))
-            .BackItem("« Back")
-            .ExitItem("Exit")
+            .Item((IGameClient viewer, ref MenuItemContext ctx) =>
+            {
+                ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_RespawnAll");
+                ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_RespawnAll");
+                ctx.Action   = ctrl =>
+                {
+                    var n = _tools.RespawnAll();
+                    Loc.Chat(lm, ctrl.Client, "EventManager_RespawnAll", n);
+                    ctrl.Refresh();
+                };
+            })
+            .SubMenu(
+                viewer => Loc.Text(lm, viewer, "EventManager_Menu_Countdown") + " »",
+                BuildCountdownPage)
+            .BackItem()
+            .ExitItem()
             .Build();
     }
 
     private Menu BuildCountdownPage(IGameClient client)
     {
         var lm      = _bridge.LocalizerManager;
-        var builder = Menu.Create().Title(Loc.Text(lm, client, "EventManager_Menu_Countdown"));
+        var builder = Menu.Create()
+            .Title(viewer => Loc.Text(lm, viewer, "EventManager_Menu_Countdown"));
 
         foreach (var secs in new[] { 3, 5, 10 })
         {
             var s = secs; // capture
-            builder = builder.Item(
-                Loc.Text(lm, client, "EventManager_Menu_Countdown_Secs", s),
-                ctrl =>
+            builder = builder.Item((IGameClient viewer, ref MenuItemContext ctx) =>
+            {
+                ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_Countdown_Secs", s);
+                ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Countdown");
+                ctx.Action   = ctrl =>
                 {
                     _tools.Countdown(s);
                     ctrl.Exit();
-                });
+                };
+            });
         }
 
-        return builder.BackItem("« Back").ExitItem("Exit").Build();
+        return builder.BackItem().ExitItem().Build();
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

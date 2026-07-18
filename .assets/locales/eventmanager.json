@@ -34,7 +34,6 @@
   "EventManager_Menu_DisableCurrent": { "en-US": "Disable: {0}" },
   "EventManager_Menu_Enable":         { "en-US": "Enable" },
   "EventManager_Menu_Disable":        { "en-US": "Disable" },
-  "EventManager_Menu_SettingHint":    { "en-US": "(chat: !events set {0} {1} <value>)" },
   "EventManager_Menu_Confirm_Title":  { "en-US": "Switch event?" },
   "EventManager_Menu_Confirm_Line":   { "en-US": "{0} → {1}" },
   "EventManager_Menu_Confirm_Yes":    { "en-US": "Confirm switch" },
@@ -44,5 +43,19 @@
   "EventManager_Menu_IntroOff":       { "en-US": "Intro mode: ON → turn OFF" },
   "EventManager_Menu_RespawnAll":     { "en-US": "Respawn all dead players" },
   "EventManager_Menu_Countdown":      { "en-US": "Countdown" },
-  "EventManager_Menu_Countdown_Secs": { "en-US": "{0} seconds" }
+  "EventManager_Menu_Countdown_Secs": { "en-US": "{0} seconds" },
+
+  "EventManager_Hint_Status_Active":  { "en-US": "Select to open the active event" },
+  "EventManager_Hint_Status_None":    { "en-US": "Server is vanilla — select to browse events" },
+  "EventManager_Hint_ActiveRow":      { "en-US": "Currently active" },
+  "EventManager_Hint_Enable":         { "en-US": "Start this event" },
+  "EventManager_Hint_EnableRestart":  { "en-US": "Start this event — restarts the round" },
+  "EventManager_Hint_Disable":        { "en-US": "Stop and return to vanilla" },
+  "EventManager_Hint_Toggle":         { "en-US": "Select to toggle" },
+  "EventManager_Hint_Pick":           { "en-US": "Select to pick a value" },
+  "EventManager_Hint_TextSetting":    { "en-US": "Set via chat: !events set {0} {1} <value>" },
+  "EventManager_Hint_Adjust":         { "en-US": "Adjust — exact value: !events set {0} {1} <value>" },
+  "EventManager_Hint_Intro":          { "en-US": "While ON the round cannot end" },
+  "EventManager_Hint_RespawnAll":     { "en-US": "Respawns every dead T/CT" },
+  "EventManager_Hint_Countdown":      { "en-US": "Center-screen countdown for everyone" }
 }
