@@ -16,6 +16,7 @@ internal sealed class InterfaceBridge
 
     internal IClientManager ClientManager { get; }
     internal IConVarManager ConVarManager { get; }
+    internal Sharp.Shared.Objects.ISteamApi SteamApi { get; }
 
     internal IModSharp           ModSharp           { get; }
     internal ILoggerFactory      LoggerFactory      { get; }
@@ -33,6 +34,7 @@ internal sealed class InterfaceBridge
 
         ClientManager = sharedSystem.GetClientManager();
         ConVarManager = sharedSystem.GetConVarManager();
+        SteamApi      = sharedSystem.GetModSharp().GetSteamGameServer();
 
         ModSharp           = sharedSystem.GetModSharp();
         LoggerFactory      = loggerFactory;

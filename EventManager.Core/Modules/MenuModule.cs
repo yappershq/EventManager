@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Linq;
+using EventManager.Modules.Web;
 using EventManager.Plugins;
 using EventManager.Shared;
 using EventManager.Utils;
@@ -24,12 +25,14 @@ internal sealed class MenuModule : IModule
     private readonly InterfaceBridge   _bridge;
     private readonly EventCoordinator  _coordinator;
     private readonly StreamToolsModule _tools;
+    private readonly WebBridgeModule   _web;
 
-    public MenuModule(InterfaceBridge bridge, EventCoordinator coordinator, StreamToolsModule tools)
+    public MenuModule(InterfaceBridge bridge, EventCoordinator coordinator, StreamToolsModule tools, WebBridgeModule web)
     {
         _bridge      = bridge;
         _coordinator = coordinator;
         _tools       = tools;
+        _web         = web;
     }
 
     // ── IModule ────────────────────────────────────────────────────────────
@@ -113,6 +116,15 @@ internal sealed class MenuModule : IModule
             .SubMenu(
                 viewer => Loc.Text(lm, viewer, "EventManager_Menu_Events", _coordinator.Registered.Count),
                 BuildEventsPage)
+            .Item((IGameClient viewer, ref MenuItemContext ctx) =>
+            {
+                var ready = _web.IsActive ? _web.GetReadyRequests() : [];
+                if (ready.Count == 0) return; // Title unset → row skipped
+
+                ctx.Title    = Loc.Text(lm, viewer, "EventManager_Menu_Queue", ready.Count);
+                ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Queue");
+                ctx.Action   = ctrl => ctrl.Next(BuildQueuePage);
+            })
             .SubMenu(
                 viewer => Loc.Text(lm, viewer, "EventManager_Menu_Tools"),
                 BuildToolsPage)
@@ -342,6 +354,34 @@ internal sealed class MenuModule : IModule
             .BackItem(viewer => Loc.Text(lm, viewer, "EventManager_Menu_Confirm_No"))
             .ExitItem()
             .Build();
+    }
+
+    // ── Website request queue ──────────────────────────────────────────────
+
+    private Menu BuildQueuePage(IGameClient client)
+    {
+        var lm      = _bridge.LocalizerManager;
+        var builder = Menu.Create().Title(Loc.Text(lm, client, "EventManager_Menu_Queue_Title"));
+
+        foreach (var req in _web.GetReadyRequests())
+        {
+            var r = req; // capture
+            builder = builder.Item((IGameClient viewer, ref MenuItemContext ctx) =>
+            {
+                var eventName = _coordinator.Find(r.EventId)?.DisplayName ?? r.EventId;
+                ctx.Title    = $"{eventName} @ {r.MapName}";
+                ctx.HintText = Loc.Text(lm, viewer, "EventManager_Hint_Apply", r.RequestedByName);
+                ctx.Action   = ctrl =>
+                {
+                    var (ok, result) = _web.ApplyRequest(r.Id);
+                    Loc.Chat(lm, ctrl.Client, ok ? "EventManager_Applying" : "EventManager_ApplyFailed",
+                        r.MapName, result);
+                    ctrl.Exit(); // map change incoming
+                };
+            });
+        }
+
+        return builder.BackItem().ExitItem().Build();
     }
 
     // ── Setting pickers ────────────────────────────────────────────────────

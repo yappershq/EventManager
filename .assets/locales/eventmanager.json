@@ -51,6 +51,10 @@
   "EventManager_Menu_RespawnAll":     { "en-US": "Respawn all dead players" },
   "EventManager_Menu_Countdown":      { "en-US": "Countdown" },
   "EventManager_Menu_Countdown_Secs": { "en-US": "{0} seconds" },
+  "EventManager_Menu_Queue":          { "en-US": "Queue ({0}) »" },
+  "EventManager_Menu_Queue_Title":    { "en-US": "Ready requests" },
+  "EventManager_Applying":            { "en-US": " {{green}}[Events]{{default}} Applying — changing map to {{lime}}{0}{{default}}…" },
+  "EventManager_ApplyFailed":         { "en-US": " {{red}}Apply failed: {1}" },
 
   "EventManager_Menu_Start":          { "en-US": "▶ Start: {0}" },
   "EventManager_Menu_StartNow":       { "en-US": "▶ Start now" },
@@ -73,5 +77,7 @@
   "EventManager_Hint_Adjust":         { "en-US": "Adjust — exact value: !events set {0} {1} <value>" },
   "EventManager_Hint_Intro":          { "en-US": "While ON the round cannot end" },
   "EventManager_Hint_RespawnAll":     { "en-US": "Respawns every dead T/CT" },
-  "EventManager_Hint_Countdown":      { "en-US": "Center-screen countdown for everyone" }
+  "EventManager_Hint_Countdown":      { "en-US": "Center-screen countdown for everyone" },
+  "EventManager_Hint_Queue":          { "en-US": "Website requests staged and ready to apply" },
+  "EventManager_Hint_Apply":          { "en-US": "Requested by {0} — map change + arm" }
 }
