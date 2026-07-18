@@ -55,13 +55,15 @@ Threat: workshop maps shipping cfg/vscript junk (`sv_cheats 1`, movement cvars, 
 Already covered today: CvarGuard blocks `point_servercommand` and re-execs our gamemode cfg
 with a delay so our values win. The gap is *event-specific* values and a hard safety net.
 
-**v1 (recommended): EventManager-internal, no new cross-repo dependency.**
-A small `ConVarPinsModule` in Core:
+**v1 — BUILT (2026-07-18): EventManager-internal, no new cross-repo dependency.**
+`ConVarPinsModule` in Core (ships `eventmanager.pins.jsonc.example`, inert without it):
 - a global pin list from config (`{"sv_cheats":"0", ...}` — ships as .example),
 - plus the ACTIVE event's `GameConVars` (already contract-owned since 1.1.0),
 - re-asserted on `OnServerSpawn` at low listener priority (after every cfg exec — the exact
   pattern proven by Prophunt's gate listener) and once more a few seconds after map start
-  (CvarGuard's own delayed-exec trick).
+  (CvarGuard's own delayed-exec trick), PLUS a per-convar change hook (re-entrancy guarded)
+  that snaps any pinned convar back the instant a map cfg / vscript / point_servercommand
+  changes it — runtime protection, not just map-load.
 
 **v2 (only if guard lists should be site-managed): extend CvarGuard, don't import it.**
 Extract `CvarGuard.Shared` with a `RegisterPins(owner, dict)` API and have EventManager feed
