@@ -25,16 +25,4 @@ internal static class Loc
         }
     }
 
-    /// <summary>Localized center-screen line to every in-game human (plain, no color codes).</summary>
-    public static void CenterAll(ILocalizerManager? lm, IClientManager clients, string key, params object?[] args)
-    {
-        if (lm is null) return;
-
-        foreach (var client in clients.GetGameClients(inGame: true))
-        {
-            if (client.IsFakeClient) continue;
-
-            lm.For(client).Localized(key, args).Prefix(null).Print(HudPrintChannel.Center);
-        }
-    }
 }

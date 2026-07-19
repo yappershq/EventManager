@@ -29,7 +29,11 @@ public interface IRoundContext
 
     // ── Arena helpers (map-agnostic) ──────────────────────────────────────────
 
-    /// <summary>Centroid of the map's spawn points — a safe, map-agnostic "center of the arena".</summary>
+    /// <summary>A designed, playable arena center — a random bombsite center, or the spawn centroid on
+    /// non-bomb maps. Prefer this over a raw centroid: bombsites are never a wall/void.</summary>
+    Vector GetArenaCenter();
+
+    /// <summary>Centroid of the map's spawn points — the fallback "center of the arena".</summary>
     Vector GetSpawnCentroid();
 
     /// <summary>Respawn every in-game player (heats loop under one long native round).</summary>

@@ -36,8 +36,8 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
     private RoundContext? _round;
     private SessionState  _state = SessionState.Idle;
 
-    private float _sessionEndTime;
-    private float _nextPhaseTime;
+    private long  _sessionEndMs;   // wall clock (Environment.TickCount64) — survives map change; CurTime resets per level
+    private long  _nextPhaseMs;
     private int   _phase;
     private int   _roundNumber;
     private double _phaseCadenceSeconds = 15 * 60;
@@ -45,7 +45,7 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
     private bool  _autostart  = true;
     private bool  _finaleQueued;
 
-    private float Now => bridge.ModSharp.GetGlobals().CurTime;
+    private static long NowMs => Environment.TickCount64;
 
     // ── IModule ───────────────────────────────────────────────────────────
     public bool Init() => true;
@@ -89,8 +89,8 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
         _finaleSize          = Math.Clamp(finaleSize, 2, 10);
         _autostart           = autostart;
         _phaseCadenceSeconds = Math.Clamp(escalationMinutes, 1, 60) * 60.0;
-        _sessionEndTime      = Now + (float)(Math.Clamp(durationMinutes, 1, 180) * 60);
-        _nextPhaseTime       = Now + (float)_phaseCadenceSeconds;
+        _sessionEndMs        = NowMs + (long)Math.Clamp(durationMinutes, 1, 180) * 60_000L;
+        _nextPhaseMs         = NowMs + (long)(_phaseCadenceSeconds * 1000);
         _state               = SessionState.Lobby;
 
         logger.LogInformation("[ChallengeEngine] Session started: {Challenge}, {Mins} min.",
@@ -116,13 +116,14 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
         // Re-entrancy / stray-timer guard: only advance from a between-heats state.
         if (_state is not (SessionState.Lobby or SessionState.Intermission)) return;
 
-        if (!_finaleQueued && Now >= _sessionEndTime)
+        if (!_finaleQueued && NowMs >= _sessionEndMs)
             _finaleQueued = true;
 
-        var humans = bridge.ClientManager.GetGameClients(inGame: true).Count(c => !c.IsFakeClient);
-        if (_active is null || humans < _active.MinPlayers)
+        // Count all in-game players incl. bots so bot-only smoke tests can meet MinPlayers.
+        var players = bridge.ClientManager.GetGameClients(inGame: true).Count();
+        if (_active is null || players < _active.MinPlayers)
         {
-            Loc.ChatAll(bridge.LocalizerManager, bridge.ClientManager, "challenge.waiting", humans, _active?.MinPlayers ?? 0);
+            Loc.ChatAll(bridge.LocalizerManager, bridge.ClientManager, "challenge.waiting", players, _active?.MinPlayers ?? 0);
             bridge.ModSharp.PushTimer(TryBeginRound, 5.0, GameTimerFlags.StopOnMapEnd);
             return;
         }
@@ -145,11 +146,14 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
             Loc.ChatAll(bridge.LocalizerManager, bridge.ClientManager, "challenge.round", _roundNumber);
 
         try { _active.StartRound(_round); }
-        catch (Exception ex) { logger.LogError(ex, "[ChallengeEngine] StartRound threw — voiding heat."); NextAfterRound(); return; }
+        catch (Exception ex) { logger.LogError(ex, "[ChallengeEngine] StartRound threw — voiding heat."); _round?.SweepMarkers(); _round = null; NextAfterRound(); return; }
 
         var secs = Math.Max(10, _active.RoundSeconds);
-        bridge.ModSharp.PushTimer(() => OnRoundTimeout(_roundNumber), secs, GameTimerFlags.StopOnMapEnd);
-        bridge.ModSharp.PushTimer(TickHeat, 0.1, GameTimerFlags.StopOnMapEnd); // per-tick challenge logic; self-stops
+        var scheduledRound = _roundNumber;   // snapshot: the closure must not re-read the live field (stale-timer guard)
+        bridge.ModSharp.PushTimer(() => OnRoundTimeout(scheduledRound), secs, GameTimerFlags.StopOnMapEnd);
+        // Repeatable is REQUIRED to loop — a non-Repeatable Func timer fires once then is dropped regardless
+        // of returning Continue; TimerAction.Stop clears Repeatable to end it when the heat closes.
+        bridge.ModSharp.PushTimer(TickHeat, 0.1, GameTimerFlags.Repeatable | GameTimerFlags.StopOnMapEnd);
     }
 
     /// <summary>Repeating per-tick pump for the active challenge; stops itself when the heat ends.</summary>
@@ -168,7 +172,7 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
         if (_round is null || _round.RoundNumber != round || _round.Ended) return;
 
         try { _round.EndRound(_active!.ForceEnd(_round)); }
-        catch (Exception ex) { logger.LogError(ex, "[ChallengeEngine] ForceEnd threw — voiding heat."); NextAfterRound(); }
+        catch (Exception ex) { logger.LogError(ex, "[ChallengeEngine] ForceEnd threw — voiding heat."); _round?.SweepMarkers(); _round = null; NextAfterRound(); }
     }
 
     /// <summary>Called by RoundContext.EndRound (challenge- or timeout-driven).</summary>
@@ -200,7 +204,7 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
     {
         var mult = 1.0 + 0.5 * _phase;
 
-        var scores = new Dictionary<ulong, int>(ctx.PendingAwards.ToDictionary(k => k.Key, v => v.Value));
+        var scores = ctx.PendingAwards.ToDictionary(k => k.Key, v => v.Value);
         if (ctx.Result is { } r)
             foreach (var s in r.Scores)
                 scores[s.SteamId] = scores.GetValueOrDefault(s.SteamId) + s.Points;
@@ -229,10 +233,10 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
 
     private void MaybeEscalate()
     {
-        if (Now < _nextPhaseTime) return;
+        if (NowMs < _nextPhaseMs) return;
 
         _phase++;
-        _nextPhaseTime = Now + (float)_phaseCadenceSeconds;
+        _nextPhaseMs = NowMs + (long)(_phaseCadenceSeconds * 1000);
         Loc.ChatAll(bridge.LocalizerManager, bridge.ClientManager, "challenge.escalation", _phase);
         logger.LogInformation("[ChallengeEngine] Escalated to phase {Phase}.", _phase);
     }

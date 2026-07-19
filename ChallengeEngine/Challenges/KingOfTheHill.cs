@@ -37,7 +37,7 @@ internal sealed class KingOfTheHill : IChallenge
     public void StartRound(IRoundContext ctx)
     {
         ctx.RespawnAll();
-        ctx.Scratch["koth"] = new State { Center = ctx.GetSpawnCentroid(), Last = ctx.Now };
+        ctx.Scratch["koth"] = new State { Center = ctx.GetArenaCenter(), Last = ctx.Now };
         // ponytail: literal center HUD in Phase 2; Phase 3 → localized HTML overlay + beam pillar.
         ctx.CenterAll("KING OF THE HILL — hold the center!");
     }

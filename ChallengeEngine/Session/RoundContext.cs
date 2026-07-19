@@ -19,6 +19,8 @@ internal sealed class RoundContext : IRoundContext
     private readonly Dictionary<int, CEntityHandle<IBaseEntity>> _markers = new();  // token id → serial handle
     private int _markerCounter;
 
+    private static readonly System.Random Rng = new();
+
     public RoundContext(InterfaceBridge bridge, SessionEngine engine, int roundNumber, int phase, IReadOnlyCollection<string> modifiers)
     {
         _bridge     = bridge;
@@ -37,9 +39,10 @@ internal sealed class RoundContext : IRoundContext
     internal bool          Ended  { get; private set; }
     internal RoundResult?  Result { get; private set; }
 
+    // Bots included (doc: "fake clients OK for testing") so bot-only smoke tests work; excluded only when eliminated.
     public IReadOnlyList<IGameClient> AlivePlayers =>
         _bridge.ClientManager.GetGameClients(inGame: true)
-            .Where(c => !c.IsFakeClient && !_eliminated.Contains((ulong)c.SteamId))
+            .Where(c => !_eliminated.Contains((ulong)c.SteamId))
             .ToList();
 
     public IGameClient? GetPlayer(ulong steamId)
@@ -48,6 +51,17 @@ internal sealed class RoundContext : IRoundContext
     public float Now => _bridge.ModSharp.GetGlobals().CurTime;
 
     // ── Arena helpers ─────────────────────────────────────────────────────────
+
+    public Vector GetArenaCenter()
+    {
+        // Bombsites are the map's designed contested zones — a far better hill than a raw centroid
+        // (never a wall/void). GetCenter() gives the brush's world-space center. Random site = variety.
+        var sites = new List<Vector>();
+        IBaseEntity? b = null;
+        while ((b = _bridge.EntityManager.FindEntityByClassname(b, "func_bomb_target")) is not null)
+            sites.Add(b.GetCenter());
+        return sites.Count > 0 ? sites[Rng.Next(sites.Count)] : GetSpawnCentroid();
+    }
 
     public Vector GetSpawnCentroid()
     {
@@ -69,7 +83,8 @@ internal sealed class RoundContext : IRoundContext
     public void RespawnAll()
     {
         foreach (var c in _bridge.ClientManager.GetGameClients(inGame: true))
-            c.GetPlayerController()?.Respawn();
+            if (c.GetPlayerController() is { IsValidEntity: true } ctrl)
+                ctrl.Respawn();
     }
 
     public bool TryGetOrigin(IGameClient client, out Vector origin)
@@ -109,15 +124,16 @@ internal sealed class RoundContext : IRoundContext
     public void PlaySoundAll(string soundEvent)
     {
         foreach (var c in _bridge.ClientManager.GetGameClients(inGame: true))
-            if (!c.IsFakeClient) c.GetPlayerController()?.EmitSoundClient(soundEvent);
+            if (!c.IsFakeClient && c.GetPlayerController() is { IsValidEntity: true } ctrl)
+                ctrl.EmitSoundClient(soundEvent);
     }
 
     public bool TeleportSafe(IGameClient client, Vector position, Vector? angles = null)
     {
-        // ponytail: Phase 1 does a direct teleport. Phase 2 (KotH) swaps in the SuperPowers
-        // EntityPlacementTest + DropToGround port for wall/void/telefrag safety.
+        // ponytail: direct teleport for now. The SuperPowers EntityPlacementTest + DropToGround port
+        // (wall/void/telefrag safety) lands when a challenge actually needs precise placement.
         var pawn = client.GetPlayerController()?.GetPlayerPawn();
-        if (pawn is null) return false;
+        if (pawn is not { IsValidEntity: true, IsAlive: true }) return false;
         pawn.Teleport(position, angles, null);
         return true;
     }
