@@ -5,17 +5,22 @@ using System.Text.Json;
 using EventManager.Plugins;
 using Microsoft.Extensions.Logging;
 using Sharp.Shared.Enums;
+using Sharp.Shared.HookParams;
 using Sharp.Shared.Listeners;
 using Sharp.Shared.Objects;
+using Sharp.Shared.Types;
 
 namespace EventManager.Modules;
 
 /// <summary>
 /// Workshop-map convar protection. Custom/workshop maps ship cfgs and vscripts that set hostile
-/// convars (<c>sv_cheats 1</c>, movement/gravity junk, …). Those get set at MAP START, at ROUND
-/// START, and mid-round. This pins a configured allow-list to safe values and re-asserts them at
-/// all three moments, always from safe callback contexts (map/round listeners + a timer) —
-/// never from inside a convar-change callback.
+/// convars (<c>sv_cheats 1</c>, movement/gravity junk, …). Two safe layers:
+///   (1) PREVENT — a pre-hook on <c>CPointServerCommand::InputCommand</c> BLOCKS a map entity's
+///       command outright when it targets a pinned convar (the same mechanism CvarGuard uses; the
+///       event server ships no CvarGuard, so this fills that gap). The bad value never applies.
+///   (2) RE-ASSERT — map-cfg execs bypass point_servercommand, so also force pinned values back at
+///       map start + round start (safe listener contexts).
+/// NEVER a convar change-hook (see note below).
 ///
 /// NOTE (2026-07-19): an earlier version used a per-convar CHANGE HOOK to snap values back. That
 /// crashed the Source engine natively — calling <c>SetString</c> from inside the engine's own
@@ -32,17 +37,12 @@ namespace EventManager.Modules;
 /// </summary>
 internal sealed class ConVarPinsModule : IModule, IGameListener
 {
-    private const double ReassertIntervalSeconds = 2.0; // catches mid-round convar drift
-
     private readonly ILogger<ConVarPinsModule> _logger;
     private readonly InterfaceBridge           _bridge;
     private readonly EventCoordinator          _coordinator;
 
     private readonly Dictionary<string, string>        _pins     = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<(IConVar Cvar, string Value)> _resolved = [];
-
-    private bool _active;
-    private int  _timerGen; // invalidates the periodic loop across map changes / shutdown
 
     // Run AFTER gamemode/workshop cfg execs so our values are the last word (descending priority).
     int IGameListener.ListenerVersion  => IGameListener.ApiVersion;
@@ -81,22 +81,21 @@ internal sealed class ConVarPinsModule : IModule, IGameListener
             _resolved.Add((cvar, value));
         }
 
-        _active = true;
         _bridge.ModSharp.InstallGameListener(this);
+        _bridge.HookManager.PointServerCommand.InstallHookPre(OnPointCommand);
         ReassertAll();
-        StartPeriodic();
 
-        _logger.LogInformation("[EventManager.Pins] Protecting {Count} convar(s) (map/round + every {Sec}s).",
-            _resolved.Count, ReassertIntervalSeconds);
+        _logger.LogInformation("[EventManager.Pins] Protecting {Count} convar(s) (blocked at point_servercommand + re-asserted at map/round start).",
+            _resolved.Count);
     }
 
     public void Shutdown()
     {
-        _active = false;
-        _timerGen++;
-
         if (_pins.Count > 0)
+        {
             _bridge.ModSharp.RemoveGameListener(this);
+            _bridge.HookManager.PointServerCommand.RemoveHookPre(OnPointCommand);
+        }
 
         _resolved.Clear();
     }
@@ -147,30 +146,43 @@ internal sealed class ConVarPinsModule : IModule, IGameListener
         }
     }
 
-    private void StartPeriodic()
-    {
-        var gen = ++_timerGen;
-        _bridge.ModSharp.PushTimer(() => PeriodicTick(gen), ReassertIntervalSeconds,
-            GameTimerFlags.StopOnMapEnd);
-    }
-
-    private void PeriodicTick(int gen)
-    {
-        if (!_active || gen != _timerGen) return; // superseded (map change / shutdown)
-
-        ReassertAll();
-        _bridge.ModSharp.PushTimer(() => PeriodicTick(gen), ReassertIntervalSeconds,
-            GameTimerFlags.StopOnMapEnd);
-    }
-
-    // Map start: re-assert immediately (after the map/gamemode cfg exec) + restart the periodic loop.
+    // Map start: re-assert immediately (after the map/gamemode cfg exec) + a delayed pass.
     void IGameListener.OnServerSpawn()
     {
         ReassertAll();
         _bridge.ModSharp.PushTimer(ReassertAll, 3.0, GameTimerFlags.StopOnMapEnd); // beat delayed execs
-        StartPeriodic(); // the old loop died with StopOnMapEnd; start a fresh one for this map
     }
 
     // Round start: cfgs/vscripts commonly re-set convars here.
     void IGameListener.OnRoundRestarted() => ReassertAll();
+
+    // ── point_servercommand block (prevention) ─────────────────────────────
+
+    /// <summary>
+    /// Block a map entity's server command when its first token is a pinned convar (unless the
+    /// active event owns it). Stops <c>sv_cheats 1</c> &amp; friends before they apply — no fight,
+    /// no re-assert needed for this path.
+    /// </summary>
+    private HookReturnValue<EmptyHookReturn> OnPointCommand(
+        IPointServerCommandHookParams param,
+        HookReturnValue<EmptyHookReturn> result)
+    {
+        var cmd = param.Command;
+        if (string.IsNullOrWhiteSpace(cmd)) return result;
+
+        // First whitespace-delimited token = the convar/command name.
+        var span = cmd.AsSpan().TrimStart();
+        var end  = span.IndexOfAny(' ', '\t');
+        var name = (end < 0 ? span : span[..end]).ToString();
+
+        if (!_pins.ContainsKey(name)) return result;
+
+        var owned = _coordinator.ActiveEventId is { } id && _coordinator.Find(id) is { } mode
+            ? mode.GameConVars
+            : null;
+        if (owned is not null && owned.ContainsKey(name)) return result; // active event owns it
+
+        _logger.LogInformation("[EventManager.Pins] BLOCKED point_servercommand touching pinned '{Name}': {Cmd}", name, cmd);
+        return new HookReturnValue<EmptyHookReturn>(EHookAction.SkipCallReturnOverride, default);
+    }
 }
