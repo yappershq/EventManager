@@ -14,6 +14,7 @@ internal sealed class RoundContext : IRoundContext
 {
     private readonly InterfaceBridge _bridge;
     private readonly SessionEngine   _engine;
+    private readonly Nav.LiveNavMesh _nav;
     private readonly HashSet<ulong>       _eliminated = new();
     private readonly Dictionary<ulong, int> _pending  = new();   // instant awards → folded into result
     private readonly Dictionary<int, CEntityHandle<IBaseEntity>> _markers = new();  // token id → serial handle
@@ -21,10 +22,11 @@ internal sealed class RoundContext : IRoundContext
 
     private static readonly System.Random Rng = new();
 
-    public RoundContext(InterfaceBridge bridge, SessionEngine engine, int roundNumber, int phase, IReadOnlyCollection<string> modifiers)
+    public RoundContext(InterfaceBridge bridge, SessionEngine engine, Nav.LiveNavMesh nav, int roundNumber, int phase, IReadOnlyCollection<string> modifiers)
     {
         _bridge     = bridge;
         _engine     = engine;
+        _nav        = nav;
         RoundNumber = roundNumber;
         Phase       = phase;
         Modifiers   = modifiers;
@@ -54,13 +56,19 @@ internal sealed class RoundContext : IRoundContext
 
     public Vector GetArenaCenter()
     {
-        // Bombsites are the map's designed contested zones — a far better hill than a raw centroid
-        // (never a wall/void). GetCenter() gives the brush's world-space center. Random site = variety.
+        var centroid = GetSpawnCentroid();
+
+        // Best: a random WALKABLE nav-area near the map center → a roaming hill that's never in a
+        // wall/void, on any map. Nav returns null if unavailable (gamedata missing / game updated).
+        if (_nav.RandomReachablePoint(centroid, 1500f) is { } navPoint)
+            return navPoint;
+
+        // Fallback: a bombsite (designed contested zone). Last resort: the raw spawn centroid.
         var sites = new List<Vector>();
         IBaseEntity? b = null;
         while ((b = _bridge.EntityManager.FindEntityByClassname(b, "func_bomb_target")) is not null)
             sites.Add(b.GetCenter());
-        return sites.Count > 0 ? sites[Rng.Next(sites.Count)] : GetSpawnCentroid();
+        return sites.Count > 0 ? sites[Rng.Next(sites.Count)] : centroid;
     }
 
     public Vector GetSpawnCentroid()

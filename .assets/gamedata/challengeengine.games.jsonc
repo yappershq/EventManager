@@ -1,0 +1,31 @@
+{
+  // ChallengeEngine nav gamedata — for walkable hill placement (King of the Hill).
+  // Registered via IGameData.Register("challengeengine.games").
+  //
+  // CNavMesh::GetNearestNavArea is ALREADY signed by ModSharp core (server.games.jsonc) — we do NOT
+  // redeclare it; we just GetAddress it. We only add what core doesn't have: the TheNavMesh global +
+  // the CNavArea corner/connect offsets. RE'd + live-verified in MonsterMod (docs/NAV_RE.md there).
+  // If a CS2 update shifts the sig/offsets, nav simply disables and the hill falls back to bombsite.
+  "Addresses": {
+    // lea rax,[rip+disp] loading &TheNavMesh. factory "+3 r" resolves the rel32 to the global's ADDRESS
+    // (no 'd': the CNavMesh* it holds is rebound each map load; we deref fresh per query in code).
+    "CNavMesh::TheNavMesh": {
+      "library": "server",
+      "linux": {
+        "factory": "+3 r",
+        "signature": "48 8D 05 ? ? ? ? F3 0F 59 C1 F3 0F 58 05 DC"
+      },
+      "windows": {
+        "factory": "+3 r",
+        "signature": ""
+      }
+    }
+  },
+  // CNavArea layout: AABB nw/lo corner @ +0x24, se/hi corner @ +0x30, m_connect[4] @ +0x88.
+  // Area center = midpoint(nw, se).
+  "Offsets": {
+    "CNavArea::m_nwCorner": { "linux": 36,  "windows": 36 },
+    "CNavArea::m_seCorner": { "linux": 48,  "windows": 48 },
+    "CNavArea::m_connect":  { "linux": 136, "windows": 136 }
+  }
+}

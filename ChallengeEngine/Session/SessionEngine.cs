@@ -24,7 +24,7 @@ internal enum SessionState { Idle, Lobby, Round, Intermission, Finale, Crowned }
 /// die on map end). Disconnect self-heal via <see cref="IClientListener.OnClientDisconnecting"/>.
 /// DB persistence / live overlay come in later phases.
 /// </summary>
-internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBridge bridge)
+internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBridge bridge, Nav.LiveNavMesh nav)
     : IModule, IGameListener, IClientListener
 {
     private const double IntermissionSeconds = 12.0;
@@ -53,6 +53,7 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
 
     public void OnAllSharpModulesLoaded()
     {
+        nav.Init();   // resolves the nav mesh for walkable hill placement; degrades to fallback if unavailable
         RegisterChallenge(new Challenges.KingOfTheHill());
         RegisterChallenge(new Challenges.NullChallenge());
         bridge.ModSharp.InstallGameListener(this);
@@ -138,7 +139,7 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
 
         _roundNumber++;
         _state = finale ? SessionState.Finale : SessionState.Round;
-        _round = new RoundContext(bridge, this, _roundNumber, _phase, ActiveModifiers(finale));
+        _round = new RoundContext(bridge, this, nav, _roundNumber, _phase, ActiveModifiers(finale));
 
         if (finale)
             Loc.ChatAll(bridge.LocalizerManager, bridge.ClientManager, "challenge.finale");
