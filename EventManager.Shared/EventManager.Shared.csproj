@@ -11,7 +11,7 @@
 
   <PropertyGroup>
     <PackageId>YappersHQ.EventManager.Shared</PackageId>
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
     <Authors>yappershq</Authors>
     <Company>yappershq</Company>
     <Description>Public contract (IEventManagerShared / IEventMode) for registering switchable event modes with the ModSharp/CS2 EventManager gate from fun-mode plugins. Compile-time only — the runtime DLL is provided by the EventManager plugin via /game/sharp/shared/.</Description>

@@ -68,5 +68,12 @@ public interface IEventMode
     /// </summary>
     bool TryInvokeAction(string key, string arg) => false;
 
+    /// <summary>
+    /// Current special-role assignments: SteamID64 → role label ("seeker", "solo", …). Lets the
+    /// operator UI mark who's currently a seeker/solo (multi-seeker friendly). Empty when none.
+    /// </summary>
+    IReadOnlyDictionary<ulong, string> GetActivePlayerRoles() => EmptyRoles;
+
     private static readonly Dictionary<string, string> EmptyConVars = new();
+    private static readonly Dictionary<ulong, string>  EmptyRoles   = new();
 }

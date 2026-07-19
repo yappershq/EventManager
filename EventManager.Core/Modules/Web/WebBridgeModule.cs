@@ -250,11 +250,18 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
 
     private StateSnapshot CaptureSnapshot()
     {
+        // Roles from the active event so the site can mark current seekers/solo.
+        var roles = _coordinator.ActiveEventId is { } activeId && _coordinator.Find(activeId) is { } activeMode
+            ? activeMode.GetActivePlayerRoles()
+            : null;
+
         var players = new List<object>();
         foreach (var c in _bridge.ClientManager.GetGameClients(inGame: true))
         {
             if (c.IsFakeClient) continue;
-            players.Add(new { slot = (int)(byte)c.Slot, steamId = c.SteamId.ToString(), name = c.Name });
+            var sid = (ulong)c.SteamId;
+            var role = roles is not null && roles.TryGetValue(sid, out var r) ? r : null;
+            players.Add(new { slot = (int)(byte)c.Slot, steamId = sid.ToString(), name = c.Name, role });
         }
 
         var catalog = new List<(string, string, string, string, string, string?)>();
