@@ -4,6 +4,8 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Sharp.Shared;
+using Sharp.Shared.Enums;
+using Sharp.Shared.Managers;
 using Sharp.Shared.Utilities;
 using SVector = Sharp.Shared.Types.Vector;
 
@@ -24,7 +26,21 @@ internal sealed unsafe class LiveNavMesh(ISharedSystem shared, ILogger<LiveNavMe
     private nint _theNavMeshAddr;
     private int  _nwCorner, _seCorner, _mConnect;
     private nint _criteria;
+    private IPhysicsQueryManager? _physics;
     private readonly Random _rng = new();
+
+    // Hits world geometry, player-clip, AND physics props — so a hull trace catches box crates
+    // sitting in an otherwise-"open" nav area.
+    private const InteractionLayers WorldMask =
+        InteractionLayers.Solid | InteractionLayers.Sky | InteractionLayers.PlayerClip
+        | InteractionLayers.WorldGeometry | InteractionLayers.PhysicsProp;
+
+    // Standing player hull — the space the hill must actually be clear for.
+    private static readonly Sharp.Shared.Types.TraceShapeHull StandHull = new()
+    {
+        Mins = new SVector(-16f, -16f, 0f),
+        Maxs = new SVector(16f, 16f, 72f),
+    };
 
     // CNavMesh::GetNearestNavArea(this, const Vector* pos, const int* layer, uint flags,
     //   Vector* outClosest, NavSearchInfo_t* criteria, float maxDist) -> CNavArea*.
@@ -34,6 +50,8 @@ internal sealed unsafe class LiveNavMesh(ISharedSystem shared, ILogger<LiveNavMe
 
     public bool Init()
     {
+        _physics = shared.GetPhysicsQueryManager();
+
         var gd = shared.GetModSharp().GetGameData();
         try { gd.Register("challengeengine.games"); }
         catch (Exception ex)
@@ -141,9 +159,29 @@ internal sealed unsafe class LiveNavMesh(ISharedSystem shared, ILogger<LiveNavMe
         if (scored.Count == 0) return null;
 
         scored.Sort((x, y) => y.score.CompareTo(x.score));
-        var k = Math.Min(8, scored.Count); // random among the top-K most-open areas → open AND varied
-        var c = Center(scored[_rng.Next(k)].area);
+
+        // Among the top-K most-open areas, keep only those actually CLEAR of geometry/box props at the
+        // center (nav openness is floor area — a crate stack could still sit in it). Random among the
+        // clear ones → open, unobstructed, AND varied. If none pass, fall back to the most-open area.
+        var topK  = Math.Min(12, scored.Count);
+        var clear = new List<nint>();
+        for (var i = 0; i < topK; i++)
+            if (IsClear(Center(scored[i].area)))
+                clear.Add(scored[i].area);
+
+        var chosen = clear.Count > 0 ? clear[_rng.Next(clear.Count)] : scored[0].area;
+        var c = Center(chosen);
         return new SVector(c.X, c.Y, c.Z);
+    }
+
+    /// <summary>True if a standing player hull at this point doesn't overlap world geometry or a box prop.</summary>
+    private bool IsClear(Vector3 center)
+    {
+        if (_physics is null) return true; // can't test → accept (nav already prefers walkable floor)
+
+        var at  = new SVector(center.X, center.Y, center.Z + 2f); // nudge off the floor to avoid a floor-touch hit
+        var ray = new Sharp.Shared.Types.TraceShapeRay(StandHull);
+        return !_physics.TraceShape(ray, at, at, WorldMask, CollisionGroupType.Default, TraceQueryFlag.All).DidHit();
     }
 
     private float Footprint(nint a)
