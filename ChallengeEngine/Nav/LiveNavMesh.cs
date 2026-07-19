@@ -107,38 +107,49 @@ internal sealed unsafe class LiveNavMesh(ISharedSystem shared, ILogger<LiveNavMe
         }
     }
 
-    /// <summary>A random walkable nav-area center within <paramref name="maxDist"/> (XY) of
-    /// <paramref name="from"/> — a guaranteed-reachable, roaming hill spot. Null if nav isn't ready or
-    /// there's no area under the point.</summary>
-    public SVector? RandomReachablePoint(SVector from, float maxDist)
+    /// <summary>
+    /// Center of one of the map's MOST OPEN walkable areas — a proper KotH hill (a plaza/mid, not a
+    /// corridor or a cramped nook). Flood-fills the whole connected nav graph from <paramref name="seed"/>,
+    /// scores each area by local openness (its own footprint + its neighbours' — so a tile in the middle
+    /// of a big open space wins over an isolated large-but-walled one), then picks randomly among the
+    /// top few for variety. Null if nav isn't ready or there's no area under the seed.
+    /// </summary>
+    public SVector? MostOpenPoint(SVector seed)
     {
         if (!Ready) return null;
 
-        var start = GetArea(from);
+        var start = GetArea(seed);
         if (start == nint.Zero) return null;
 
-        var candidates = new List<Vector3>();
-        var fromV3 = new Vector3(from.X, from.Y, from.Z);
-        foreach (var n1 in Neighbors(start))
+        var visited = new HashSet<nint> { start };
+        var queue   = new Queue<nint>();
+        queue.Enqueue(start);
+
+        var scored = new List<(nint area, float score)>();
+        while (queue.Count > 0 && scored.Count < 20000) // cap: a real CS2 map is a few thousand areas
         {
-            var c1 = Center(n1);
-            if (WithinXY(fromV3, c1, maxDist)) candidates.Add(c1);
-            foreach (var n2 in Neighbors(n1))
+            var a = queue.Dequeue();
+            var score = Footprint(a);
+            foreach (var n in Neighbors(a))
             {
-                if (n2 == start) continue;
-                var c2 = Center(n2);
-                if (WithinXY(fromV3, c2, maxDist)) candidates.Add(c2);
+                score += Footprint(n); // local openness = own area + surrounding areas
+                if (visited.Add(n)) queue.Enqueue(n);
             }
+            scored.Add((a, score));
         }
 
-        var pick = candidates.Count > 0 ? candidates[_rng.Next(candidates.Count)] : Center(start);
-        return new SVector(pick.X, pick.Y, pick.Z);
+        if (scored.Count == 0) return null;
+
+        scored.Sort((x, y) => y.score.CompareTo(x.score));
+        var k = Math.Min(8, scored.Count); // random among the top-K most-open areas → open AND varied
+        var c = Center(scored[_rng.Next(k)].area);
+        return new SVector(c.X, c.Y, c.Z);
     }
 
-    private static bool WithinXY(Vector3 a, Vector3 b, float max)
+    private float Footprint(nint a)
     {
-        var dx = a.X - b.X;
-        var dy = a.Y - b.Y;
-        return dx * dx + dy * dy <= max * max;
+        var lo = Lo(a);
+        var hi = Hi(a);
+        return MathF.Abs(hi.X - lo.X) * MathF.Abs(hi.Y - lo.Y);
     }
 }

@@ -58,9 +58,9 @@ internal sealed class RoundContext : IRoundContext
     {
         var centroid = GetSpawnCentroid();
 
-        // Best: a random WALKABLE nav-area near the map center → a roaming hill that's never in a
-        // wall/void, on any map. Nav returns null if unavailable (gamedata missing / game updated).
-        if (_nav.RandomReachablePoint(centroid, 1500f) is { } navPoint)
+        // Best: the map's most OPEN walkable area (a plaza/mid, not a corridor) — guaranteed reachable
+        // and roomy for a fight, on any map. Nav returns null if unavailable (gamedata missing / update).
+        if (_nav.MostOpenPoint(centroid) is { } navPoint)
             return navPoint;
 
         // Fallback: a bombsite (designed contested zone). Last resort: the raw spawn centroid.
