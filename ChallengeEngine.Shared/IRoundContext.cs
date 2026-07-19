@@ -15,7 +15,10 @@ public interface IRoundContext
     int Phase { get; }
     IReadOnlyCollection<string> Modifiers { get; }
 
-    /// <summary>In-game humans still in play (fake clients + eliminated excluded).</summary>
+    /// <summary>Game time in seconds (<c>GetGlobals().CurTime</c>) — use for per-tick deltas, not wall clock.</summary>
+    float Now { get; }
+
+    /// <summary>In-game players still in play (fake clients OK for testing; eliminated excluded).</summary>
     IReadOnlyList<IGameClient> AlivePlayers { get; }
 
     /// <summary>Re-resolve a client by SteamID (never store the reference across callbacks).</summary>
@@ -23,6 +26,17 @@ public interface IRoundContext
 
     /// <summary>Per-heat scratch state, discarded when the heat ends.</summary>
     IDictionary<string, object> Scratch { get; }
+
+    // ── Arena helpers (map-agnostic) ──────────────────────────────────────────
+
+    /// <summary>Centroid of the map's spawn points — a safe, map-agnostic "center of the arena".</summary>
+    Vector GetSpawnCentroid();
+
+    /// <summary>Respawn every in-game player (heats loop under one long native round).</summary>
+    void RespawnAll();
+
+    /// <summary>Current world origin of a player's pawn. False if not alive/spawned.</summary>
+    bool TryGetOrigin(IGameClient client, out Vector origin);
 
     // ── Heat control ────────────────────────────────────────────────────────
     void EndRound(RoundResult result);

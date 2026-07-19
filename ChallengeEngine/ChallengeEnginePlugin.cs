@@ -34,7 +34,7 @@ public sealed class ChallengeEnginePlugin : IModSharpModule, IEventMode
     private IDisposable? _registration;
 
     // Operator-tunable session settings (via IEventMode.GetSettings/TrySetSetting).
-    private string _challengeId   = "null";
+    private string _challengeId   = "koth";
     private int    _durationMin   = 60;
     private int    _escalationMin = 15;
     private int    _finaleSize    = 6;

@@ -45,6 +45,42 @@ internal sealed class RoundContext : IRoundContext
     public IGameClient? GetPlayer(ulong steamId)
         => _bridge.ClientManager.GetGameClient((SteamID)steamId);
 
+    public float Now => _bridge.ModSharp.GetGlobals().CurTime;
+
+    // ── Arena helpers ─────────────────────────────────────────────────────────
+
+    public Vector GetSpawnCentroid()
+    {
+        Vector sum = new(0, 0, 0);
+        var count = 0;
+        foreach (var cls in new[] { "info_player_terrorist", "info_player_counterterrorist" })
+        {
+            IBaseEntity? e = null;
+            while ((e = _bridge.EntityManager.FindEntityByClassname(e, cls)) is not null)
+            {
+                var o = e.GetAbsOrigin();
+                sum = new Vector(sum.X + o.X, sum.Y + o.Y, sum.Z + o.Z);
+                count++;
+            }
+        }
+        return count == 0 ? new Vector(0, 0, 0) : new Vector(sum.X / count, sum.Y / count, sum.Z / count);
+    }
+
+    public void RespawnAll()
+    {
+        foreach (var c in _bridge.ClientManager.GetGameClients(inGame: true))
+            c.GetPlayerController()?.Respawn();
+    }
+
+    public bool TryGetOrigin(IGameClient client, out Vector origin)
+    {
+        origin = default;
+        var pawn = client.GetPlayerController()?.GetPlayerPawn();
+        if (pawn is not { IsValidEntity: true, IsAlive: true }) return false;
+        origin = pawn.GetAbsOrigin();
+        return true;
+    }
+
     // ── Heat control ─────────────────────────────────────────────────────────
 
     public void EndRound(RoundResult result)

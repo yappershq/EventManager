@@ -53,6 +53,7 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
 
     public void OnAllSharpModulesLoaded()
     {
+        RegisterChallenge(new Challenges.KingOfTheHill());
         RegisterChallenge(new Challenges.NullChallenge());
         bridge.ModSharp.InstallGameListener(this);
         bridge.ClientManager.InstallClientListener(this);
@@ -148,6 +149,18 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
 
         var secs = Math.Max(10, _active.RoundSeconds);
         bridge.ModSharp.PushTimer(() => OnRoundTimeout(_roundNumber), secs, GameTimerFlags.StopOnMapEnd);
+        bridge.ModSharp.PushTimer(TickHeat, 0.1, GameTimerFlags.StopOnMapEnd); // per-tick challenge logic; self-stops
+    }
+
+    /// <summary>Repeating per-tick pump for the active challenge; stops itself when the heat ends.</summary>
+    private TimerAction TickHeat()
+    {
+        if (_state is not (SessionState.Round or SessionState.Finale) || _round is not { Ended: false } ctx || _active is null)
+            return TimerAction.Stop;
+
+        try { _active.Tick(ctx); }
+        catch (Exception ex) { logger.LogError(ex, "[ChallengeEngine] Tick threw."); }
+        return TimerAction.Continue;
     }
 
     private void OnRoundTimeout(int round)

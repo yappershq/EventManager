@@ -8,5 +8,6 @@
   "challenge.standings.row":    { "en-US": "  {{lime}}{0}.{{default}} {1} — {{green}}{2}{{default}} pts" },
   "challenge.champion":         { "en-US": "{{orange}}👑 CHAMPION: {{lime}}{0}{{orange}} — {1} pts, {2} round wins!" },
   "challenge.champion.none":    { "en-US": "{{green}}Challenge Night over{{default}} — no champion." },
+  "challenge.koth.name":        { "en-US": "King of the Hill" },
   "challenge.null.name":        { "en-US": "Test Challenge" }
 }
