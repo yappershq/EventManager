@@ -5,20 +5,25 @@ using System.Text.Json;
 using EventManager.Plugins;
 using Microsoft.Extensions.Logging;
 using Sharp.Shared.Listeners;
-using Sharp.Shared.Managers;
 using Sharp.Shared.Objects;
 
 namespace EventManager.Modules;
 
 /// <summary>
 /// Workshop-map convar protection. Custom/workshop maps ship cfgs and vscripts that set hostile
-/// convars (<c>sv_cheats 1</c>, movement/gravity junk, …). This pins a configured allow-list of
-/// convars to safe values and snaps any of them back the instant something changes it — via a
-/// change hook (catches map-cfg execs, vscript sets, and anything that slips past CvarGuard's
-/// point_servercommand block) plus a re-assert on every map load (after the gamemode cfg exec)
-/// and a short delayed re-assert to beat delayed workshop execs.
+/// convars (<c>sv_cheats 1</c>, movement/gravity junk, …) — they exec at MAP LOAD. This pins a
+/// configured allow-list of convars to safe values and re-asserts them on every map load, at a
+/// low listener priority so it runs AFTER the map/gamemode cfg exec (the values it re-asserts
+/// win), plus a short delayed re-assert to beat delayed workshop execs.
 ///
-/// This is EventManager-internal by design (no CvarGuard import — two copies of one defense drift).
+/// NOTE (2026-07-19): an earlier version installed a per-convar CHANGE HOOK to snap values back
+/// at runtime. That crashed the Source engine natively — calling <c>SetString</c> from inside the
+/// engine's own convar-change dispatch re-enters a non-re-entrant native path (a workshop map
+/// setting <c>sv_airaccelerate</c> reliably killed the process a few seconds after boot). The
+/// change hook is GONE; map-load re-assert covers the real threat (map cfgs run at load), and
+/// runtime point_servercommand is already blocked by CvarGuard.
+///
+/// EventManager-internal by design (no CvarGuard import — two copies of one defense drift).
 /// Config: <c>configs/eventmanager.pins.jsonc</c> (ships as .example). Inert when absent.
 /// </summary>
 internal sealed class ConVarPinsModule : IModule, IGameListener
@@ -26,11 +31,8 @@ internal sealed class ConVarPinsModule : IModule, IGameListener
     private readonly ILogger<ConVarPinsModule> _logger;
     private readonly InterfaceBridge           _bridge;
 
-    private readonly Dictionary<string, string>          _pins  = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<IConVar, string>         _hooked = new();
-    private IConVarManager.DelegateConVarChange?        _changeCallback;
-
-    private bool _reasserting; // re-entrancy guard: our own SetString re-fires the change hook
+    private readonly Dictionary<string, string> _pins   = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<(IConVar Cvar, string Value)> _resolved = [];
 
     // Run AFTER gamemode/workshop cfg execs so our values are the last word (descending priority).
     int IGameListener.ListenerVersion  => IGameListener.ApiVersion;
@@ -57,9 +59,7 @@ internal sealed class ConVarPinsModule : IModule, IGameListener
             return;
         }
 
-        _changeCallback = OnPinnedConVarChanged;
-
-        foreach (var (name, _) in _pins)
+        foreach (var (name, value) in _pins)
         {
             if (_bridge.ConVarManager.FindConVar(name) is not { } cvar)
             {
@@ -67,26 +67,22 @@ internal sealed class ConVarPinsModule : IModule, IGameListener
                 continue;
             }
 
-            _bridge.ConVarManager.InstallChangeHook(cvar, _changeCallback);
-            _hooked[cvar] = _pins[name];
+            _resolved.Add((cvar, value));
         }
 
         _bridge.ModSharp.InstallGameListener(this);
         ReassertAll();
 
-        _logger.LogInformation("[EventManager.Pins] Protecting {Count} convar(s).", _hooked.Count);
+        _logger.LogInformation("[EventManager.Pins] Protecting {Count} convar(s) (re-asserted at map load).",
+            _resolved.Count);
     }
 
     public void Shutdown()
     {
-        if (_changeCallback is not null)
-            foreach (var cvar in _hooked.Keys)
-                _bridge.ConVarManager.RemoveChangeHook(cvar, _changeCallback);
-
-        _hooked.Clear();
-
         if (_pins.Count > 0)
             _bridge.ModSharp.RemoveGameListener(this);
+
+        _resolved.Clear();
     }
 
     // ── Config ─────────────────────────────────────────────────────────────
@@ -119,31 +115,11 @@ internal sealed class ConVarPinsModule : IModule, IGameListener
 
     // ── Enforcement ────────────────────────────────────────────────────────
 
-    /// <summary>A pinned convar changed — snap it back if something set it off-value.</summary>
-    private void OnPinnedConVarChanged(IConVar conVar)
-    {
-        if (_reasserting) return; // our own re-assert; ignore
-        if (!_hooked.TryGetValue(conVar, out var pinned)) return;
-
-        if (!string.Equals(conVar.GetString(), pinned, StringComparison.Ordinal))
-        {
-            _reasserting = true;
-            try { conVar.SetString(pinned); }
-            finally { _reasserting = false; }
-
-            _logger.LogInformation("[EventManager.Pins] '{Name}' forced back to '{Value}'.", conVar.Name, pinned);
-        }
-    }
-
     private void ReassertAll()
     {
-        _reasserting = true;
-        try
-        {
-            foreach (var (cvar, value) in _hooked)
+        foreach (var (cvar, value) in _resolved)
+            if (!string.Equals(cvar.GetString(), value, StringComparison.Ordinal))
                 cvar.SetString(value);
-        }
-        finally { _reasserting = false; }
     }
 
     /// <summary>Map load: re-assert after the gamemode/workshop cfg exec, then again shortly after
