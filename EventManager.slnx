@@ -2,4 +2,6 @@
   <Project Path="EventManager.Shared/EventManager.Shared.csproj" />
   <Project Path="EventManager.Core/EventManager.Core.csproj" />
   <Project Path="EventManager.LowGravity/EventManager.LowGravity.csproj" />
+  <Project Path="ChallengeEngine.Shared/ChallengeEngine.Shared.csproj" />
+  <Project Path="ChallengeEngine/ChallengeEngine.csproj" />
 </Solution>

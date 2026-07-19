@@ -1,0 +1,12 @@
+{
+  "challenge.start":            { "en-US": "{{green}}Challenge Night{{default}} — get ready!" },
+  "challenge.waiting":          { "en-US": "{{green}}Challenge Night{{default}} — waiting for players ({0}/{1})…" },
+  "challenge.round":            { "en-US": "{{green}}Round {0}{{default}} — fight!" },
+  "challenge.finale":           { "en-US": "{{orange}}★ GRAND FINALE ★{{default}} — winner takes the crown!" },
+  "challenge.escalation":       { "en-US": "{{orange}}▲ Escalation — Phase {0}{{default}}: stakes rising!" },
+  "challenge.standings.header": { "en-US": "{{green}}— Standings —" },
+  "challenge.standings.row":    { "en-US": "  {{lime}}{0}.{{default}} {1} — {{green}}{2}{{default}} pts" },
+  "challenge.champion":         { "en-US": "{{orange}}👑 CHAMPION: {{lime}}{0}{{orange}} — {1} pts, {2} round wins!" },
+  "challenge.champion.none":    { "en-US": "{{green}}Challenge Night over{{default}} — no champion." },
+  "challenge.null.name":        { "en-US": "Test Challenge" }
+}

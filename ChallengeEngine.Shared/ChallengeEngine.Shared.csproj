@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ChallengeEngine.Shared</AssemblyName>
+    <RootNamespace>ChallengeEngine.Shared</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    Challenge contract (IChallenge / IRoundContext). Unlike EventManager.Shared this references the
+    ModSharp FRAMEWORK (IGameClient / Vector) — framework types are single-ALC and host-provided at
+    runtime, so ExcludeAssets="runtime". NO ORM / 3rd-party types (those would break the single ALC).
+    Directory.Build.props doesn't add ModSharp to .Shared projects, so add it here.
+  -->
+  <ItemGroup>
+    <PackageReference Include="ModSharp.Sharp.Shared" Version="*" ExcludeAssets="runtime" />
+  </ItemGroup>
+</Project>

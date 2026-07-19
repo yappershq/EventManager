@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ChallengeEngine</AssemblyName>
+    <RootNamespace>ChallengeEngine</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection"       Version="10.0.9" />
+    <PackageReference Include="ModSharp.Sharp.Modules.LocalizerManager.Shared" Version="*" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Private=false: EventManager.Core owns/ships EventManager.Shared to shared/ — don't duplicate. -->
+    <ProjectReference Include="..\EventManager.Shared\EventManager.Shared.csproj"   Private="false" />
+    <!-- ChallengeEngine owns ChallengeEngine.Shared; Directory.Build.props routes it to .build/shared/. -->
+    <ProjectReference Include="..\ChallengeEngine.Shared\ChallengeEngine.Shared.csproj" Private="false" />
+  </ItemGroup>
+</Project>
