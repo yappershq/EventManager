@@ -73,10 +73,15 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
         RegisterChallenge(new Challenges.ThePurge());
         RegisterChallenge(new Challenges.NullChallenge());
 
-        // Built-in escalation modifiers (convar overlays; capture/restore, no change-hook).
-        RegisterModifier(new ConVarModifier(bridge.ConVarManager, "lowgrav",  "modifier.lowgrav",  ("sv_gravity", "300")));
-        RegisterModifier(new ConVarModifier(bridge.ConVarManager, "bhop",     "modifier.bhop",     ("sv_autobunnyhopping", "1"), ("sv_enablebunnyhopping", "1")));
-        RegisterModifier(new ConVarModifier(bridge.ConVarManager, "infammo",  "modifier.infammo",  ("sv_infinite_ammo", "1")));
+        // Built-in escalation modifiers (convar overlays; capture/restore, no change-hook). Inspired by
+        // SuperPowers powers (Astronaut/BunnyHop/Grenadier/Catapult/FriendlyFire). ConVarModifier
+        // null-checks each convar, so a missing/cheat-gated one is skipped rather than crashing.
+        RegisterModifier(new ConVarModifier(bridge.ConVarManager, "lowgrav",      "modifier.lowgrav",      ("sv_gravity", "300")));
+        RegisterModifier(new ConVarModifier(bridge.ConVarManager, "bhop",         "modifier.bhop",         ("sv_autobunnyhopping", "1"), ("sv_enablebunnyhopping", "1")));
+        RegisterModifier(new ConVarModifier(bridge.ConVarManager, "infammo",      "modifier.infammo",      ("sv_infinite_ammo", "1")));
+        RegisterModifier(new ConVarModifier(bridge.ConVarManager, "highjump",     "modifier.highjump",     ("sv_jump_impulse", "450")));
+        RegisterModifier(new ConVarModifier(bridge.ConVarManager, "friendlyfire", "modifier.friendlyfire", ("mp_friendlyfire", "1")));
+        RegisterModifier(new ConVarModifier(bridge.ConVarManager, "grenadier",    "modifier.grenadier",    ("ammo_grenade_limit_total", "5")));
 
         bridge.ModSharp.InstallGameListener(this);
         bridge.ClientManager.InstallClientListener(this);
