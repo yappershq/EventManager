@@ -42,6 +42,15 @@ public interface IRoundContext
     /// <summary>Current world origin of a player's pawn. False if not alive/spawned.</summary>
     bool TryGetOrigin(IGameClient client, out Vector origin);
 
+    /// <summary>Respawn one player (frag challenges keep the action going).</summary>
+    void Respawn(ulong steamId);
+
+    /// <summary>Kill a player's pawn (elimination challenges).</summary>
+    void Slay(ulong steamId, bool explode = false);
+
+    /// <summary>Give a player a weapon by classname (e.g. "weapon_ak47").</summary>
+    void GiveWeapon(ulong steamId, string weapon);
+
     // ── Heat control ────────────────────────────────────────────────────────
     void EndRound(RoundResult result);
     void Eliminate(ulong steamId, string? reason = null);

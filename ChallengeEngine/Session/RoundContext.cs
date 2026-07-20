@@ -104,6 +104,15 @@ internal sealed class RoundContext : IRoundContext
         return true;
     }
 
+    public void Respawn(ulong steamId)
+        => GetPlayer(steamId)?.GetPlayerController()?.Respawn();
+
+    public void Slay(ulong steamId, bool explode = false)
+        => GetPlayer(steamId)?.GetPlayerController()?.GetPlayerPawn()?.Slay(explode);
+
+    public void GiveWeapon(ulong steamId, string weapon)
+        => GetPlayer(steamId)?.GetPlayerController()?.GetPlayerPawn()?.GiveNamedItem(weapon);
+
     // ── Heat control ─────────────────────────────────────────────────────────
 
     public void EndRound(RoundResult result)

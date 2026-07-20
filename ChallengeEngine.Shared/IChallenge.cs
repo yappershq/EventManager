@@ -30,6 +30,10 @@ public interface IChallenge
     /// <summary>A player left mid-heat — tell the engine how the heat should react.</summary>
     LeaveReaction OnPlayerLeft(IRoundContext ctx, ulong steamId);
 
+    /// <summary>A player died this heat (frag-based challenges). <paramref name="attacker"/> is null on
+    /// suicide/world kills, and may equal <paramref name="victim"/>. Default no-op.</summary>
+    void OnKill(IRoundContext ctx, ulong victim, ulong? attacker) { }
+
     /// <summary>Optional per-tick logic (progress bars, zone checks, …).</summary>
     void Tick(IRoundContext ctx) { }
 

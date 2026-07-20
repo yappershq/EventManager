@@ -12,6 +12,7 @@ internal sealed class InterfaceBridge
 
     internal IEntityManager EntityManager { get; }
     internal IClientManager ClientManager { get; }
+    internal IEventManager  EventManager  { get; }
 
     internal IModSharp           ModSharp           { get; }
     internal ILoggerFactory      LoggerFactory      { get; }
@@ -27,6 +28,7 @@ internal sealed class InterfaceBridge
 
         EntityManager = sharedSystem.GetEntityManager();
         ClientManager = sharedSystem.GetClientManager();
+        EventManager  = sharedSystem.GetEventManager();
 
         ModSharp            = sharedSystem.GetModSharp();
         LoggerFactory       = loggerFactory;

@@ -8,6 +8,7 @@ using ChallengeEngine.Plugins;
 using ChallengeEngine.Utils;
 using Microsoft.Extensions.Logging;
 using Sharp.Shared.Enums;
+using Sharp.Shared.GameEvents;
 using Sharp.Shared.Listeners;
 using Sharp.Shared.Objects;
 using Sharp.Shared.Units;
@@ -28,7 +29,7 @@ internal enum SessionState { Idle, Lobby, Round, Intermission, Finale, Crowned }
 /// DB persistence / live overlay come in later phases.
 /// </summary>
 internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBridge bridge, Nav.LiveNavMesh nav, ChallengeStore store)
-    : IModule, IGameListener, IClientListener
+    : IModule, IGameListener, IClientListener, IEventListener
 {
     private const double IntermissionSeconds = 12.0;
 
@@ -64,13 +65,18 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
         store.Init(); // opens ce_* persistence; degrades to in-memory-only if no DB config
         _ = LoadResumeAsync(); // preload an interrupted session's totals (crash-resume), applied on next start
         RegisterChallenge(new Challenges.KingOfTheHill());
+        RegisterChallenge(new Challenges.Territories());
+        RegisterChallenge(new Challenges.ThePurge());
         RegisterChallenge(new Challenges.NullChallenge());
         bridge.ModSharp.InstallGameListener(this);
         bridge.ClientManager.InstallClientListener(this);
+        bridge.EventManager.InstallEventListener(this);
+        bridge.EventManager.HookEvent("player_death");
     }
 
     public void Shutdown()
     {
+        bridge.EventManager.RemoveEventListener(this);
         bridge.ClientManager.RemoveClientListener(this);
         bridge.ModSharp.RemoveGameListener(this);
         EndSession(crowned: false);
@@ -421,6 +427,22 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
     }
 
     // ── Disconnect self-heal ───────────────────────────────────────────────
+
+    int IEventListener.ListenerVersion  => IEventListener.ApiVersion;
+    int IEventListener.ListenerPriority => 0;
+
+    void IEventListener.FireGameEvent(IGameEvent @event)
+    {
+        if (@event is not IEventPlayerDeath death) return;
+        if (_state is not (SessionState.Round or SessionState.Finale) || _round is not { Ended: false } ctx || _active is null) return;
+
+        if (death.VictimController?.SteamId is not { } vSid) return;
+        var victim   = (ulong)vSid;
+        ulong? attacker = death.KillerController?.SteamId is { } kSid && (ulong)kSid != victim ? (ulong)kSid : null;
+
+        try { _active.OnKill(ctx, victim, attacker); }
+        catch (Exception ex) { logger.LogError(ex, "[ChallengeEngine] OnKill threw."); }
+    }
 
     int IClientListener.ListenerVersion  => IClientListener.ApiVersion;
     int IClientListener.ListenerPriority => 0;

@@ -9,5 +9,7 @@
   "challenge.champion":         { "en-US": "{{orange}}👑 CHAMPION: {{lime}}{0}{{orange}} — {1} pts, {2} round wins!" },
   "challenge.champion.none":    { "en-US": "{{green}}Challenge Night over{{default}} — no champion." },
   "challenge.koth.name":        { "en-US": "King of the Hill" },
+  "challenge.territories.name": { "en-US": "Territories" },
+  "challenge.purge.name":       { "en-US": "The Purge" },
   "challenge.null.name":        { "en-US": "Test Challenge" }
 }
