@@ -74,6 +74,14 @@ public interface IEventMode
     /// </summary>
     IReadOnlyDictionary<ulong, string> GetActivePlayerRoles() => EmptyRoles;
 
+    /// <summary>
+    /// Optional live gameplay-state JSON (standings, round, phase, clock, …) for the observe lane —
+    /// the manager's web bridge writes it into <c>em_state</c> on each heartbeat so the website/OBS
+    /// overlay can render a live board. Default null = no live state (existing modes unaffected).
+    /// Re-queried each heartbeat; keep it cheap. Shape is the mode's own; the site knows how to read it.
+    /// </summary>
+    string? GetLiveStateJson() => null;
+
     private static readonly Dictionary<string, string> EmptyConVars = new();
     private static readonly Dictionary<ulong, string>  EmptyRoles   = new();
 }

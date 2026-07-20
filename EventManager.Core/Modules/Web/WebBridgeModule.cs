@@ -192,7 +192,7 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
 
     private sealed record StateSnapshot(
         string Map, int Players, string PlayersJson, string? ActiveId, string? ArmedId,
-        string StartMode, bool Intro,
+        string StartMode, bool Intro, string? LiveJson,
         List<(string Id, string Name, string SettingsJson, string ConVarsJson, string ActionsJson, string? MapsJson)> Catalog);
 
     private async Task HeartbeatTickAsync()
@@ -221,6 +221,7 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
             IntroActive   = snap.Intro,
             DownloadsJson = downloadsJson,
             PlayersJson   = snap.PlayersJson,
+            LiveJson      = snap.LiveJson,
             UpdatedAt     = now,
         }).ExecuteCommandAsync();
 
@@ -250,10 +251,10 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
 
     private StateSnapshot CaptureSnapshot()
     {
-        // Roles from the active event so the site can mark current seekers/solo.
-        var roles = _coordinator.ActiveEventId is { } activeId && _coordinator.Find(activeId) is { } activeMode
-            ? activeMode.GetActivePlayerRoles()
-            : null;
+        // Roles + live gameplay state from the active event (site marks seekers/solo + shows a live board).
+        var activeMode = _coordinator.ActiveEventId is { } activeId ? _coordinator.Find(activeId) : null;
+        var roles      = activeMode?.GetActivePlayerRoles();
+        var liveJson   = activeMode?.GetLiveStateJson();
 
         var players = new List<object>();
         foreach (var c in _bridge.ClientManager.GetGameClients(inGame: true))
@@ -292,6 +293,7 @@ internal sealed class WebBridgeModule : IModule, IGameListener, ISteamListener
             _coordinator.ArmedEventId,
             _coordinator.StartMode.ToString(),
             _tools.IntroActive,
+            liveJson,
             catalog);
     }
 

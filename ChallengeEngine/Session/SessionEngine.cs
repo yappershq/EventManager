@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using ChallengeEngine.Plugins;
 using ChallengeEngine.Utils;
 using Microsoft.Extensions.Logging;
@@ -44,6 +45,7 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
     private int   _finaleSize = 6;
     private bool  _autostart  = true;
     private bool  _finaleQueued;
+    private string? _pendingChallengeId;   // operator swap → applied at the next heat
 
     private static long NowMs => Environment.TickCount64;
 
@@ -87,6 +89,7 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
         _phase               = 0;
         _roundNumber         = 0;
         _finaleQueued        = false;
+        _pendingChallengeId  = null;
         _finaleSize          = Math.Clamp(finaleSize, 2, 10);
         _autostart           = autostart;
         _phaseCadenceSeconds = Math.Clamp(escalationMinutes, 1, 60) * 60.0;
@@ -116,6 +119,13 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
     {
         // Re-entrancy / stray-timer guard: only advance from a between-heats state.
         if (_state is not (SessionState.Lobby or SessionState.Intermission)) return;
+
+        // Apply an operator challenge-swap for this heat.
+        if (_pendingChallengeId is { } pid && _challenges.GetValueOrDefault(pid) is { } pc)
+        {
+            _active = pc;
+            _pendingChallengeId = null;
+        }
 
         if (!_finaleQueued && NowMs >= _sessionEndMs)
             _finaleQueued = true;
@@ -272,6 +282,71 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
         Loc.ChatAll(bridge.LocalizerManager, bridge.ClientManager, "challenge.standings.header");
         for (var i = 0; i < top.Count; i++)
             Loc.ChatAll(bridge.LocalizerManager, bridge.ClientManager, "challenge.standings.row", i + 1, top[i].Name, top[i].Points);
+    }
+
+    // ── Operator verbs (routed from the IEventMode actions) ────────────────
+
+    /// <summary>End the current heat now without scoring, advancing to the next.</summary>
+    public void SkipRound()
+    {
+        if (_round is { Ended: false } r) r.EndRound(new RoundResult([], null));
+    }
+
+    /// <summary>Make the next heat the grand finale (voiding a normal heat in progress).</summary>
+    public void ForceFinale()
+    {
+        _finaleQueued = true;
+        if (_state == SessionState.Round && _round is { Ended: false } r) r.EndRound(new RoundResult([], null));
+    }
+
+    /// <summary>Begin a heat immediately (when autostart is off or during intermission).</summary>
+    public void StartRoundNow()
+    {
+        if (_state is SessionState.Lobby or SessionState.Intermission)
+            bridge.ModSharp.PushTimer(TryBeginRound, 0.1, GameTimerFlags.StopOnMapEnd);
+    }
+
+    public void ExtendMinutes(int minutes)
+    {
+        if (minutes > 0) _sessionEndMs += (long)minutes * 60_000L;
+    }
+
+    /// <summary>Swap the challenge for the next heat (applied at the next round boundary).</summary>
+    public void RequestChallenge(string challengeId)
+    {
+        if (_challenges.ContainsKey(challengeId)) _pendingChallengeId = challengeId;
+    }
+
+    // ── Control-room surfaces ──────────────────────────────────────────────
+
+    /// <summary>Top-3 current standings as roles (1st/2nd/3rd) for the operator UI.</summary>
+    public IReadOnlyDictionary<ulong, string> ActiveRoles()
+    {
+        var d   = new Dictionary<ulong, string>();
+        var top = Standings.Take(3).ToList();
+        for (var i = 0; i < top.Count; i++)
+            d[top[i].SteamId] = (i + 1) switch { 1 => "1st", 2 => "2nd", _ => "3rd" };
+        return d;
+    }
+
+    /// <summary>Live gameplay-state JSON for the observe lane → website/OBS overlay.</summary>
+    public string LiveStateJson()
+    {
+        var standings = Standings.Take(10).Select((t, i) => new
+        {
+            rank = i + 1, steamId = t.SteamId.ToString(), name = t.Name, points = t.Points, roundWins = t.RoundWins,
+        });
+        var secondsLeft = _state is SessionState.Idle ? 0 : (int)Math.Max(0, (_sessionEndMs - NowMs) / 1000);
+        return JsonSerializer.Serialize(new
+        {
+            state      = _state.ToString(),
+            challenge  = _active?.Id,
+            round      = _roundNumber,
+            phase      = _phase,
+            secondsLeft,
+            multiplier = 1.0 + 0.5 * _phase,
+            standings,
+        });
     }
 
     // ── Map change reconcile (StopOnMapEnd timers die on map end) ──────────

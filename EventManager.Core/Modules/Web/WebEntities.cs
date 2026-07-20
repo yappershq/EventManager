@@ -30,6 +30,11 @@ internal sealed class EmState
     [SugarColumn(ColumnDataType = "TEXT", IsNullable = true)]
     public string? PlayersJson { get; set; }
 
+    /// <summary>Active mode's live gameplay state (IEventMode.GetLiveStateJson) — standings/round/clock
+    /// for the website/OBS overlay. Null when no mode active or the mode has no live state.</summary>
+    [SugarColumn(ColumnDataType = "TEXT", IsNullable = true)]
+    public string? LiveJson { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }
 

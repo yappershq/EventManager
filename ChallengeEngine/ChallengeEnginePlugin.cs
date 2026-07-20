@@ -161,7 +161,9 @@ public sealed class ChallengeEnginePlugin : IModSharpModule, IEventMode
         {
             case "challenge":
                 if (_session.Challenges.All(c => !c.Id.Equals(value, StringComparison.OrdinalIgnoreCase))) return false;
-                _challengeId = value; return true;
+                _challengeId = value;
+                _session.RequestChallenge(value); // live session: swap applies at the next heat
+                return true;
             case "duration_min":
                 if (!int.TryParse(value, out var d) || d is < 30 or > 180) return false;
                 _durationMin = d; return true;
@@ -178,6 +180,33 @@ public sealed class ChallengeEnginePlugin : IModSharpModule, IEventMode
                 return false;
         }
     }
+
+    public IReadOnlyList<EventAction> GetActions() =>
+    [
+        new("start_round",  "Start round"),
+        new("skip_round",   "Skip round"),
+        new("force_finale", "Force finale"),
+        new("extend_15",    "Extend +15 min"),
+    ];
+
+    public bool TryInvokeAction(string key, string arg)
+    {
+        if (!_session.IsRunning) return false;
+        switch (key.ToLowerInvariant())
+        {
+            case "start_round":  _session.StartRoundNow();  return true;
+            case "skip_round":   _session.SkipRound();      return true;
+            case "force_finale": _session.ForceFinale();    return true;
+            case "extend_15":    _session.ExtendMinutes(15); return true;
+            default:             return false;
+        }
+    }
+
+    public IReadOnlyDictionary<ulong, string> GetActivePlayerRoles()
+        => _session.IsRunning ? _session.ActiveRoles() : new Dictionary<ulong, string>();
+
+    public string? GetLiveStateJson()
+        => _session.IsRunning ? _session.LiveStateJson() : null;
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
