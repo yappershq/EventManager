@@ -10,6 +10,7 @@ internal static class ModuleDependencyInjection
     public static IServiceCollection AddModules(this IServiceCollection services)
     {
         services.AddSingleton<LiveNavMesh>();
+        services.AddSingleton<Persistence.ChallengeStore>();
 
         services.AddSingleton<SessionEngine>();
         services.AddSingleton<IModule>(sp => sp.GetRequiredService<SessionEngine>());

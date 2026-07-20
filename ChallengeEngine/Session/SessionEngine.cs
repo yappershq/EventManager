@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
+using ChallengeEngine.Persistence;
 using ChallengeEngine.Plugins;
 using ChallengeEngine.Utils;
 using Microsoft.Extensions.Logging;
@@ -25,7 +27,7 @@ internal enum SessionState { Idle, Lobby, Round, Intermission, Finale, Crowned }
 /// die on map end). Disconnect self-heal via <see cref="IClientListener.OnClientDisconnecting"/>.
 /// DB persistence / live overlay come in later phases.
 /// </summary>
-internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBridge bridge, Nav.LiveNavMesh nav)
+internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBridge bridge, Nav.LiveNavMesh nav, ChallengeStore store)
     : IModule, IGameListener, IClientListener
 {
     private const double IntermissionSeconds = 12.0;
@@ -47,6 +49,9 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
     private bool  _finaleQueued;
     private string? _pendingChallengeId;   // operator swap → applied at the next heat
 
+    private int _sessionDbId;                                  // ce_session row (0 = persistence off / not yet opened)
+    private (int id, List<ScoreRow> totals)? _resumeCache;     // preloaded interrupted session, applied on next start
+
     private static long NowMs => Environment.TickCount64;
 
     // ── IModule ───────────────────────────────────────────────────────────
@@ -56,6 +61,8 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
     public void OnAllSharpModulesLoaded()
     {
         nav.Init();   // resolves the nav mesh for walkable hill placement; degrades to fallback if unavailable
+        store.Init(); // opens ce_* persistence; degrades to in-memory-only if no DB config
+        _ = LoadResumeAsync(); // preload an interrupted session's totals (crash-resume), applied on next start
         RegisterChallenge(new Challenges.KingOfTheHill());
         RegisterChallenge(new Challenges.NullChallenge());
         bridge.ModSharp.InstallGameListener(this);
@@ -99,6 +106,21 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
 
         logger.LogInformation("[ChallengeEngine] Session started: {Challenge}, {Mins} min.",
             challenge.DisplayNameKey, durationMinutes);
+
+        // Persistence: resume a crashed session's totals, else open a fresh ce_session row.
+        if (_resumeCache is { totals.Count: > 0 } rc)
+        {
+            _sessionDbId = rc.id;
+            foreach (var r in rc.totals)
+                _ledger[r.SteamId] = new PlayerTotals { SteamId = r.SteamId, Name = r.Name, Points = r.Points, RoundWins = r.RoundWins };
+            logger.LogInformation("[ChallengeEngine] Resumed {N} players from an interrupted session.", rc.totals.Count);
+        }
+        else
+        {
+            _sessionDbId = 0;
+            Persist(BeginSessionAsync(challenge.Id, DateTime.UtcNow.AddMinutes(Math.Clamp(durationMinutes, 1, 180))));
+        }
+        _resumeCache = null;
 
         Loc.ChatAll(bridge.LocalizerManager, bridge.ClientManager, "challenge.start");
         bridge.ModSharp.PushTimer(TryBeginRound, autostart ? 8.0 : 3.0, GameTimerFlags.StopOnMapEnd);
@@ -225,6 +247,8 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
 
         if (ctx.Result?.RoundWinnerSteamId is { } winner)
             Totals(winner).RoundWins++;
+
+        PersistRound();
     }
 
     private PlayerTotals Totals(ulong steamId)
@@ -269,6 +293,10 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
             Loc.ChatAll(bridge.LocalizerManager, bridge.ClientManager, "challenge.champion", champ.Name, champ.Points, champ.RoundWins);
             logger.LogInformation("[ChallengeEngine] Champion: {Name} ({Pts} pts).", champ.Name, champ.Points);
         }
+
+        if (store.Ready)
+            Persist(store.CrownAsync(_sessionDbId, champ?.SteamId, Snapshot()));
+
         _round?.SweepMarkers();
         _round = null;
         // Stays Crowned until the operator deactivates Challenge Night (EM restores convars on deactivate).
@@ -348,6 +376,29 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
             standings,
         });
     }
+
+    // ── Persistence plumbing (fire-and-forget writes; async resume preload) ─
+
+    private async Task LoadResumeAsync()
+    {
+        try { _resumeCache = await store.LoadUnfinishedAsync(); }
+        catch (Exception ex) { logger.LogWarning(ex, "[ChallengeEngine] resume preload failed."); }
+    }
+
+    private async Task BeginSessionAsync(string challengeId, DateTime endsAtUtc)
+        => _sessionDbId = await store.BeginSessionAsync(challengeId, endsAtUtc);
+
+    private void PersistRound()
+    {
+        if (store.Ready) Persist(store.SaveRoundAsync(_sessionDbId, _phase, _roundNumber, Snapshot()));
+    }
+
+    private List<ScoreRow> Snapshot()
+        => _ledger.Values.Select(t => new ScoreRow(t.SteamId, t.Name, t.Points, t.RoundWins)).ToList();
+
+    private void Persist(Task task)
+        => task.ContinueWith(t => logger.LogWarning(t.Exception, "[ChallengeEngine] DB write failed."),
+            TaskContinuationOptions.OnlyOnFaulted);
 
     // ── Map change reconcile (StopOnMapEnd timers die on map end) ──────────
 
