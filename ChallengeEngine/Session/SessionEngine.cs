@@ -71,6 +71,7 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
         RegisterChallenge(new Challenges.KingOfTheHill());
         RegisterChallenge(new Challenges.Territories());
         RegisterChallenge(new Challenges.ThePurge());
+        RegisterChallenge(new Challenges.GunGame());
         RegisterChallenge(new Challenges.NullChallenge());
 
         // Built-in escalation modifiers (convar overlays; capture/restore, no change-hook). Inspired by

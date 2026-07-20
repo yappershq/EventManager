@@ -51,6 +51,9 @@ public interface IRoundContext
     /// <summary>Give a player a weapon by classname (e.g. "weapon_ak47").</summary>
     void GiveWeapon(ulong steamId, string weapon);
 
+    /// <summary>Remove all of a player's weapons (e.g. before handing them a single tiered weapon).</summary>
+    void StripWeapons(ulong steamId);
+
     // ── Heat control ────────────────────────────────────────────────────────
     void EndRound(RoundResult result);
     void Eliminate(ulong steamId, string? reason = null);

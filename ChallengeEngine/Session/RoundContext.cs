@@ -113,6 +113,9 @@ internal sealed class RoundContext : IRoundContext
     public void GiveWeapon(ulong steamId, string weapon)
         => GetPlayer(steamId)?.GetPlayerController()?.GetPlayerPawn()?.GiveNamedItem(weapon);
 
+    public void StripWeapons(ulong steamId)
+        => GetPlayer(steamId)?.GetPlayerController()?.GetPlayerPawn()?.RemoveAllItems();
+
     // ── Heat control ─────────────────────────────────────────────────────────
 
     public void EndRound(RoundResult result)

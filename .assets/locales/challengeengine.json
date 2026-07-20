@@ -11,6 +11,7 @@
   "challenge.koth.name":        { "en-US": "King of the Hill" },
   "challenge.territories.name": { "en-US": "Territories" },
   "challenge.purge.name":       { "en-US": "The Purge" },
+  "challenge.gungame.name":     { "en-US": "Gun Game" },
   "challenge.null.name":        { "en-US": "Test Challenge" },
   "modifier.lowgrav":           { "en-US": "{{orange}}▲ Modifier: {{lime}}LOW GRAVITY{{orange}} engaged!" },
   "modifier.bhop":              { "en-US": "{{orange}}▲ Modifier: {{lime}}BUNNY HOP{{orange}} engaged!" },
