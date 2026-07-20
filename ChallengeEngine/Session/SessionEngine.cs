@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using ChallengeEngine.Modifiers;
 using ChallengeEngine.Persistence;
 using ChallengeEngine.Plugins;
 using ChallengeEngine.Utils;
@@ -34,7 +35,10 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
     private const double IntermissionSeconds = 12.0;
 
     private readonly Dictionary<string, IChallenge>  _challenges = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, IModifier>   _modifiers  = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<ulong, PlayerTotals> _ledger     = new();
+    private static readonly Random Rng = new();
+    private IModifier? _activeModifier;
 
     private IChallenge?   _active;
     private RoundContext? _round;
@@ -68,6 +72,12 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
         RegisterChallenge(new Challenges.Territories());
         RegisterChallenge(new Challenges.ThePurge());
         RegisterChallenge(new Challenges.NullChallenge());
+
+        // Built-in escalation modifiers (convar overlays; capture/restore, no change-hook).
+        RegisterModifier(new ConVarModifier(bridge.ConVarManager, "lowgrav",  "modifier.lowgrav",  ("sv_gravity", "300")));
+        RegisterModifier(new ConVarModifier(bridge.ConVarManager, "bhop",     "modifier.bhop",     ("sv_autobunnyhopping", "1"), ("sv_enablebunnyhopping", "1")));
+        RegisterModifier(new ConVarModifier(bridge.ConVarManager, "infammo",  "modifier.infammo",  ("sv_infinite_ammo", "1")));
+
         bridge.ModSharp.InstallGameListener(this);
         bridge.ClientManager.InstallClientListener(this);
         bridge.EventManager.InstallEventListener(this);
@@ -85,6 +95,8 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
     // ── Registration / query (for the plugin's IEventMode) ─────────────────
     public void RegisterChallenge(IChallenge challenge) => _challenges[challenge.Id] = challenge;
     public IReadOnlyCollection<IChallenge> Challenges => _challenges.Values;
+    public void RegisterModifier(IModifier modifier) => _modifiers[modifier.Id] = modifier;
+    public IReadOnlyCollection<IModifier> Modifiers => _modifiers.Values;
     public bool IsRunning => _state is not SessionState.Idle;
 
     // ── Session control (driven by the EventManager IEventMode) ────────────
@@ -134,6 +146,7 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
 
     public void EndSession(bool crowned)
     {
+        ClearModifier(); // restore any convars a modifier changed
         _round?.SweepMarkers();
         _round  = null;
         _active = null;
@@ -280,6 +293,33 @@ internal sealed class SessionEngine(ILogger<SessionEngine> logger, InterfaceBrid
         _nextPhaseMs = NowMs + (long)(_phaseCadenceSeconds * 1000);
         Loc.ChatAll(bridge.LocalizerManager, bridge.ClientManager, "challenge.escalation", _phase);
         logger.LogInformation("[ChallengeEngine] Escalated to phase {Phase}.", _phase);
+
+        // Escalation injects a fresh random modifier — "stakes rising" made literal.
+        var pool = _modifiers.Values.Where(m => !ReferenceEquals(m, _activeModifier)).ToList();
+        if (pool.Count > 0) InjectModifier(pool[Rng.Next(pool.Count)].Id);
+    }
+
+    // ── Modifiers ──────────────────────────────────────────────────────────
+
+    /// <summary>Enable a modifier (toggling off if it's already active). Restores the previous one first.</summary>
+    public void InjectModifier(string id)
+    {
+        if (!_modifiers.TryGetValue(id, out var m)) return;
+        if (ReferenceEquals(_activeModifier, m)) { ClearModifier(); return; }
+
+        ClearModifier();
+        try { m.Enable(); _activeModifier = m; }
+        catch (Exception ex) { logger.LogError(ex, "[ChallengeEngine] modifier Enable threw."); _activeModifier = null; return; }
+
+        Loc.ChatAll(bridge.LocalizerManager, bridge.ClientManager, m.DisplayNameKey);
+    }
+
+    /// <summary>Disable the active modifier and restore its convars.</summary>
+    public void ClearModifier()
+    {
+        if (_activeModifier is not { } m) return;
+        try { m.Disable(); } catch (Exception ex) { logger.LogError(ex, "[ChallengeEngine] modifier Disable threw."); }
+        _activeModifier = null;
     }
 
     private IReadOnlyCollection<string> ActiveModifiers(bool finale)

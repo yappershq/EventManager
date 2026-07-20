@@ -181,24 +181,37 @@ public sealed class ChallengeEnginePlugin : IModSharpModule, IEventMode
         }
     }
 
-    public IReadOnlyList<EventAction> GetActions() =>
-    [
-        new("start_round",  "Start round"),
-        new("skip_round",   "Skip round"),
-        new("force_finale", "Force finale"),
-        new("extend_15",    "Extend +15 min"),
-    ];
+    public IReadOnlyList<EventAction> GetActions()
+    {
+        var actions = new List<EventAction>
+        {
+            new("start_round",    "Start round"),
+            new("skip_round",     "Skip round"),
+            new("force_finale",   "Force finale"),
+            new("extend_15",      "Extend +15 min"),
+            new("clear_modifier", "Clear modifier"),
+        };
+        actions.AddRange(_session.Modifiers.Select(m => new EventAction($"mod_{m.Id}", $"Modifier: {m.Id}")));
+        return actions;
+    }
 
     public bool TryInvokeAction(string key, string arg)
     {
         if (!_session.IsRunning) return false;
         switch (key.ToLowerInvariant())
         {
-            case "start_round":  _session.StartRoundNow();  return true;
-            case "skip_round":   _session.SkipRound();      return true;
-            case "force_finale": _session.ForceFinale();    return true;
-            case "extend_15":    _session.ExtendMinutes(15); return true;
-            default:             return false;
+            case "start_round":    _session.StartRoundNow();  return true;
+            case "skip_round":     _session.SkipRound();      return true;
+            case "force_finale":   _session.ForceFinale();    return true;
+            case "extend_15":      _session.ExtendMinutes(15); return true;
+            case "clear_modifier": _session.ClearModifier();  return true;
+            default:
+                if (key.StartsWith("mod_", StringComparison.OrdinalIgnoreCase))
+                {
+                    _session.InjectModifier(key[4..]);
+                    return true;
+                }
+                return false;
         }
     }
 
